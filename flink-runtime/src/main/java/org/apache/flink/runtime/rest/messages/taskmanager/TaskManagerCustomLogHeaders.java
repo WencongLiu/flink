@@ -23,6 +23,10 @@ import org.apache.flink.runtime.rest.handler.taskmanager.TaskManagerCustomLogHan
 import org.apache.flink.runtime.rest.messages.EmptyRequestBody;
 import org.apache.flink.runtime.rest.messages.LogFileNamePathParameter;
 import org.apache.flink.runtime.rest.messages.UntypedResponseMessageHeaders;
+import org.apache.flink.runtime.rest.versioning.RuntimeRestAPIVersion;
+
+import java.util.Collection;
+import java.util.Collections;
 
 /** Headers for the {@link TaskManagerCustomLogHandler}. */
 public class TaskManagerCustomLogHeaders
@@ -54,6 +58,11 @@ public class TaskManagerCustomLogHeaders
     @Override
     public String getTargetRestEndpointURL() {
         return URL;
+    }
+
+    @Override
+    public Collection<RuntimeRestAPIVersion> getSupportedAPIVersions() {
+        return Collections.singleton(RuntimeRestAPIVersion.V1);
     }
 
     public static TaskManagerCustomLogHeaders getInstance() {

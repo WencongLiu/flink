@@ -23,6 +23,10 @@ import org.apache.flink.runtime.rest.handler.cluster.JobManagerLogFileHandler;
 import org.apache.flink.runtime.rest.messages.EmptyMessageParameters;
 import org.apache.flink.runtime.rest.messages.EmptyRequestBody;
 import org.apache.flink.runtime.rest.messages.UntypedResponseMessageHeaders;
+import org.apache.flink.runtime.rest.versioning.RuntimeRestAPIVersion;
+
+import java.util.Collection;
+import java.util.Collections;
 
 /** Headers for the {@link JobManagerLogFileHandler}. */
 public class JobManagerLogFileHeader
@@ -52,6 +56,11 @@ public class JobManagerLogFileHeader
     @Override
     public String getTargetRestEndpointURL() {
         return URL;
+    }
+
+    @Override
+    public Collection<RuntimeRestAPIVersion> getSupportedAPIVersions() {
+        return Collections.singleton(RuntimeRestAPIVersion.V1);
     }
 
     public static JobManagerLogFileHeader getInstance() {

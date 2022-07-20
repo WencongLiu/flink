@@ -16,39 +16,30 @@
  * limitations under the License.
  */
 
-package org.apache.flink.runtime.rest.handler.legacy.files;
+package org.apache.flink.runtime.rest.messages;
 
-import org.apache.flink.runtime.rest.HttpMethodWrapper;
-import org.apache.flink.runtime.rest.handler.RestHandlerSpecification;
+import org.apache.flink.runtime.rest.versioning.RestAPIVersion;
 import org.apache.flink.runtime.rest.versioning.RuntimeRestAPIVersion;
 
 import java.util.Collection;
 import java.util.Collections;
 
-/** Rest handler specification for the web content handler. */
-public final class WebContentHandlerSpecification implements RestHandlerSpecification {
-
-    private static final WebContentHandlerSpecification INSTANCE =
-            new WebContentHandlerSpecification();
-
-    private WebContentHandlerSpecification() {}
-
-    @Override
-    public HttpMethodWrapper getHttpMethod() {
-        return HttpMethodWrapper.GET;
-    }
-
-    @Override
-    public String getTargetRestEndpointURL() {
-        return "/:*";
-    }
-
-    public static WebContentHandlerSpecification getInstance() {
-        return INSTANCE;
-    }
+/**
+ * This class links {@link RequestBody}s to {@link ResponseBody}s types and contains meta-data
+ * required for their http headers in runtime module.
+ *
+ * <p>Implementations must be state-less.
+ *
+ * @param <R> request message type
+ * @param <P> response message type
+ * @param <M> message parameters type
+ */
+public interface RuntimeMessageHeaders<
+                R extends RequestBody, P extends ResponseBody, M extends MessageParameters>
+        extends MessageHeaders<R, P, M> {
 
     @Override
-    public Collection<RuntimeRestAPIVersion> getSupportedAPIVersions() {
+    default Collection<? extends RestAPIVersion<?>> getSupportedAPIVersions() {
         return Collections.singleton(RuntimeRestAPIVersion.V1);
     }
 }

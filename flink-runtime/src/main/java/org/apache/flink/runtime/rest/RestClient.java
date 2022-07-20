@@ -301,6 +301,8 @@ public class RestClient implements AutoCloseableAsync {
                     R request,
                     Collection<FileUpload> fileUploads)
                     throws IOException {
+        Collection<? extends RestAPIVersion> supportedAPIVersions =
+                messageHeaders.getSupportedAPIVersions();
         return sendRequest(
                 targetAddress,
                 targetPort,
@@ -308,7 +310,8 @@ public class RestClient implements AutoCloseableAsync {
                 messageParameters,
                 request,
                 fileUploads,
-                RestAPIVersion.getLatestVersion(messageHeaders.getSupportedAPIVersions()));
+                RestAPIVersion.getLatestVersion(
+                        supportedAPIVersions, supportedAPIVersions.iterator().next()));
     }
 
     public <
@@ -323,7 +326,7 @@ public class RestClient implements AutoCloseableAsync {
                     U messageParameters,
                     R request,
                     Collection<FileUpload> fileUploads,
-                    RestAPIVersion apiVersion)
+                    RestAPIVersion<? extends RestAPIVersion<?>> apiVersion)
                     throws IOException {
         Preconditions.checkNotNull(targetAddress);
         Preconditions.checkArgument(
