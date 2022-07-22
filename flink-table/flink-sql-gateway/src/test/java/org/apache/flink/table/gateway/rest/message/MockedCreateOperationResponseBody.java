@@ -16,27 +16,25 @@
  * limitations under the License.
  */
 
-package org.apache.flink.runtime.rest;
+package org.apache.flink.table.gateway.rest.message;
 
-import org.apache.flink.shaded.netty4.io.netty.handler.codec.http.HttpMethod;
+import org.apache.flink.runtime.rest.messages.ResponseBody;
 
-/**
- * This class wraps netty's {@link HttpMethod}s into an enum, allowing us to use them in switches.
- */
-public enum HttpMethodWrapper {
-    GET(HttpMethod.GET),
-    POST(HttpMethod.POST),
-    DELETE(HttpMethod.DELETE),
-    PATCH(HttpMethod.PATCH),
-    PUT(HttpMethod.PUT);
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonProperty;
 
-    private HttpMethod nettyHttpMethod;
+/** {@link ResponseBody} for mock test. */
+public class MockedCreateOperationResponseBody implements ResponseBody {
 
-    HttpMethodWrapper(HttpMethod nettyHttpMethod) {
-        this.nettyHttpMethod = nettyHttpMethod;
+    private static final String STATUS = "operation_handle";
+
+    @JsonProperty(STATUS)
+    private String operationHandle;
+
+    public MockedCreateOperationResponseBody(@JsonProperty(STATUS) String operationHandle) {
+        this.operationHandle = operationHandle;
     }
 
-    public HttpMethod getNettyHttpMethod() {
-        return nettyHttpMethod;
+    public String getOperationHandle() {
+        return operationHandle;
     }
 }

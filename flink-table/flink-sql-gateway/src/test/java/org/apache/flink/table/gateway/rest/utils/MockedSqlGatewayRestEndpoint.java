@@ -18,14 +18,17 @@
 
 package org.apache.flink.table.gateway.rest.utils;
 
-import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.runtime.rest.handler.RestHandlerSpecification;
 import org.apache.flink.table.gateway.api.SqlGatewayService;
 import org.apache.flink.table.gateway.rest.SqlGatewayRestEndpoint;
+import org.apache.flink.table.gateway.rest.handler.MockedCreateOperationHandler;
 import org.apache.flink.table.gateway.rest.handler.MockedHandler;
+import org.apache.flink.table.gateway.rest.handler.session.OpenSessionHandler;
+import org.apache.flink.table.gateway.rest.message.MockedCreateOperationHeaders;
 import org.apache.flink.table.gateway.rest.message.MockedHeaders;
+import org.apache.flink.table.gateway.rest.message.session.OpenSessionHeaders;
 import org.apache.flink.util.ConfigurationException;
 
 import org.apache.flink.shaded.netty4.io.netty.channel.ChannelInboundHandler;
@@ -47,11 +50,29 @@ public class MockedSqlGatewayRestEndpoint extends SqlGatewayRestEndpoint {
     @Override
     protected List<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> initializeHandlers(
             CompletableFuture<String> localAddressFuture) {
-        Time timeout = Time.seconds(1);
-        List<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> handlers = new ArrayList<>(1);
+        List<Tuple2<RestHandlerSpecification, ChannelInboundHandler>> handlers =
+                new ArrayList<>(32);
         MockedHandler mockedHandler =
                 new MockedHandler(service, timeout, responseHeaders, MockedHeaders.getInstance());
+
+        OpenSessionHandler openSessionHandler =
+                new OpenSessionHandler(
+                        service, timeout, responseHeaders, OpenSessionHeaders.getInstance());
+        handlers.add(Tuple2.of(OpenSessionHeaders.getInstance(), openSessionHandler));
+
+        MockedCreateOperationHandler mockedCreateOperationHandler =
+                new MockedCreateOperationHandler(
+                        service,
+                        timeout,
+                        responseHeaders,
+                        MockedCreateOperationHeaders.getInstance());
+
         handlers.add(Tuple2.of(MockedHeaders.getInstance(), mockedHandler));
+        handlers.add(
+                Tuple2.of(
+                        MockedCreateOperationHeaders.getInstance(), mockedCreateOperationHandler));
+
+        addOperationRelatedHandlers(handlers);
         return handlers;
     }
 }

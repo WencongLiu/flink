@@ -20,6 +20,7 @@ package org.apache.flink.table.gateway.api.utils;
 
 import org.apache.flink.runtime.rest.messages.ConversionException;
 import org.apache.flink.table.gateway.api.HandleIdentifier;
+import org.apache.flink.table.gateway.api.operation.OperationHandle;
 import org.apache.flink.table.gateway.api.session.SessionHandle;
 
 import java.util.UUID;
@@ -30,19 +31,32 @@ public class ParseTools {
     public static final String SEPARATOR = "|";
     public static final String SEPARATOR_REGEX = "\\|";
 
-    public static SessionHandle parseStringToSessinHandler(String sessionHandleId)
-            throws ConversionException {
+    public static UUID[] getPublicAndSecretIds(String handleId) throws ConversionException {
         String[] ids;
         UUID publicId;
         UUID secretId;
         try {
-            ids = sessionHandleId.split(SEPARATOR_REGEX);
+            ids = handleId.split(SEPARATOR_REGEX);
             publicId = UUID.fromString(ids[0]);
             secretId = UUID.fromString(ids[1]);
         } catch (Exception e) {
             throw new ConversionException(
                     "The id of SessionHandler should contain both publicId and secretId.");
         }
-        return new SessionHandle(new HandleIdentifier(publicId, secretId));
+        return new UUID[] {publicId, secretId};
+    }
+
+    public static SessionHandle parseStringToSessinHandler(String sessionHandleId)
+            throws ConversionException {
+        UUID[] publicAndSecretIds = getPublicAndSecretIds(sessionHandleId);
+        return new SessionHandle(
+                new HandleIdentifier(publicAndSecretIds[0], publicAndSecretIds[1]));
+    }
+
+    public static OperationHandle parseStringToOperationHandler(String operationHandleId)
+            throws ConversionException {
+        UUID[] publicAndSecretIds = getPublicAndSecretIds(operationHandleId);
+        return new OperationHandle(
+                new HandleIdentifier(publicAndSecretIds[0], publicAndSecretIds[1]));
     }
 }
