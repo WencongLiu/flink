@@ -19,6 +19,7 @@
 package org.apache.flink.table.gateway.api;
 
 import org.apache.flink.annotation.PublicEvolving;
+import org.apache.flink.table.gateway.api.utils.ParseTools;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -35,8 +36,9 @@ public class HandleIdentifier {
         this.secretId = secretId;
     }
 
-    public UUID getPublicId() {
-        return publicId;
+    public String getFullID() {
+        return String.format(
+                "%s%s%s", publicId.toString(), ParseTools.SEPARATOR, secretId.toString());
     }
 
     @Override
