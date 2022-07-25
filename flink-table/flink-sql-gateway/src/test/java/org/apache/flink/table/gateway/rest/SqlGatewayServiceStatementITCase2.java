@@ -34,12 +34,9 @@ import org.apache.flink.table.gateway.api.results.ResultSet;
 import org.apache.flink.table.gateway.api.session.SessionEnvironment;
 import org.apache.flink.table.gateway.api.session.SessionHandle;
 import org.apache.flink.table.gateway.api.utils.MockedEndpointVersion;
-import org.apache.flink.table.gateway.api.utils.ParseTools;
 import org.apache.flink.table.gateway.rest.message.parameters.FetchResultsTokenParameters;
 import org.apache.flink.table.gateway.rest.message.parameters.SessionMessageParameters;
 import org.apache.flink.table.gateway.rest.message.statement.ExecuteStatementHeaders;
-import org.apache.flink.table.gateway.rest.message.statement.ExecuteStatementRequestBody;
-import org.apache.flink.table.gateway.rest.message.statement.ExecuteStatementResponseBody;
 import org.apache.flink.table.gateway.rest.message.statement.FetchResultsHeaders;
 import org.apache.flink.table.gateway.service.utils.SqlGatewayServiceExtension;
 import org.apache.flink.table.gateway.service.utils.SqlScriptReader;
@@ -97,7 +94,6 @@ import static org.apache.flink.table.planner.utils.TableTestUtil.replaceNodeIdIn
 import static org.apache.flink.table.planner.utils.TableTestUtil.replaceStreamNodeId;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.parallel.ExecutionMode.CONCURRENT;
 
 /** Test {@link SqlGatewayService}#executeStatement. */
@@ -271,19 +267,36 @@ public class SqlGatewayServiceStatementITCase2 {
     private String runSingleStatement(SessionHandle sessionHandle, String statement)
             throws Exception {
 
+        // Rest
 
-        ExecuteStatementRequestBody executeStatementRequestBody =
-                new ExecuteStatementRequestBody(statement, 0L);
-        CompletableFuture<ExecuteStatementResponseBody> response =
-                sendRequest(
-                        executeStatementHeaders,
-                        sessionMessageParameters,
-                        executeStatementRequestBody);
-        ExecuteStatementResponseBody executeStatementResponseBody = response.get();
-        String operationHandleString = executeStatementResponseBody.getOperationHandle();
-        assertNotNull(operationHandleString);
+        //ExecuteStatementRequestBody executeStatementRequestBody =
+        //        new ExecuteStatementRequestBody(statement, 0L);
+        //CompletableFuture<ExecuteStatementResponseBody> response =
+        //        sendRequest(
+        //                executeStatementHeaders,
+        //                sessionMessageParameters,
+        //                executeStatementRequestBody);
+        //ExecuteStatementResponseBody executeStatementResponseBody = response.get();
+        //String operationHandleString = executeStatementResponseBody.getOperationHandle();
+        //assertNotNull(operationHandleString);
+        //OperationHandle operationHandle =
+        //        ParseTools.parseStringToOperationHandler(operationHandleString);
+
+
+        // Test do nothing
+        //CompletableFuture<MockedResponseBody> mockedFuture1 =
+        //        sendRequest(
+        //                MockedHeaders.getInstance(),
+        //                EmptyMessageParameters.getInstance(),
+        //                new MockedRequestBody(OPTION1));
+        //MockedResponseBody mockedResponseBody = mockedFuture1.get();
+
+
+        // No Rest
         OperationHandle operationHandle =
-                ParseTools.parseStringToOperationHandler(operationHandleString);
+                service.executeStatement(sessionHandle, statement, -1, new Configuration());
+
+
 
         CommonTestUtils.waitUtil(
                 () ->
