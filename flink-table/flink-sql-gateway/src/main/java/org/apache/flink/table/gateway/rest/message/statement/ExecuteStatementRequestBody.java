@@ -25,29 +25,37 @@ import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonPro
 
 import javax.annotation.Nullable;
 
+import java.util.Map;
+
 /** {@link RequestBody} for execute a statement. */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ExecuteStatementRequestBody implements RequestBody {
 
     private static final String FIELD_NAME_STATEMENT = "statement";
-    private static final String FIELD_NAME_EXECUTION_TIMEOUT = "execution_timeout";
+    private static final String FIELD_NAME_EXECUTION_TIMEOUT = "executionTimeout";
+    private static final String FIELD_NAME_EXECUTION_CONFIG = "executionConfig";
 
     @JsonProperty(FIELD_NAME_STATEMENT)
-    @Nullable
     private final String statement;
 
     @JsonProperty(FIELD_NAME_EXECUTION_TIMEOUT)
     @Nullable
     private final Long timeout;
 
+    @JsonProperty(FIELD_NAME_EXECUTION_CONFIG)
+    @Nullable
+    private final Map<String, String> executionConfig;
+
     public ExecuteStatementRequestBody(
-            @Nullable @JsonProperty(FIELD_NAME_STATEMENT) String statement,
-            @Nullable @JsonProperty(FIELD_NAME_EXECUTION_TIMEOUT) Long timeout) {
+            @JsonProperty(FIELD_NAME_STATEMENT) String statement,
+            @Nullable @JsonProperty(FIELD_NAME_EXECUTION_TIMEOUT) Long timeout,
+            @Nullable @JsonProperty(FIELD_NAME_EXECUTION_CONFIG)
+                    Map<String, String> executionConfig) {
         this.statement = statement;
         this.timeout = timeout;
+        this.executionConfig = executionConfig;
     }
 
-    @Nullable
     public String getStatement() {
         return statement;
     }
@@ -55,5 +63,10 @@ public class ExecuteStatementRequestBody implements RequestBody {
     @Nullable
     public Long getTimeout() {
         return timeout;
+    }
+
+    @Nullable
+    public Map<String, String> getExecutionConfig() {
+        return executionConfig;
     }
 }

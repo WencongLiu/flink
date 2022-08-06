@@ -28,15 +28,15 @@ import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonPro
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ExecuteStatementResponseBody implements ResponseBody {
 
-    private static final String FIELD_OPERATION_HANDLE = "operation_handle";
+    private static final String FIELD_OPERATION_HANDLE = "operationHandle";
 
-    private static final String FIELD_OPERATION_TYPE = "operation_type";
+    private static final String FIELD_OPERATION_TYPE = "operationType";
 
     @JsonProperty(FIELD_OPERATION_HANDLE)
     private final String operationHandle;
 
     @JsonProperty(FIELD_OPERATION_TYPE)
-    private final String operationTYpe = OperationType.EXECUTE_STATEMENT.name();
+    private final String operationType = OperationType.EXECUTE_STATEMENT.name();
 
     public ExecuteStatementResponseBody(
             @JsonProperty(FIELD_OPERATION_HANDLE) String operationHandle) {
@@ -47,7 +47,7 @@ public class ExecuteStatementResponseBody implements ResponseBody {
         return operationHandle;
     }
 
-    public String getOperationTYpe() {
-        return operationTYpe;
+    public String getOperationType() {
+        return operationType;
     }
 }

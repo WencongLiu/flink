@@ -19,10 +19,10 @@
 package org.apache.flink.table.gateway.rest.header.statement;
 
 import org.apache.flink.runtime.rest.HttpMethodWrapper;
+import org.apache.flink.runtime.rest.messages.EmptyRequestBody;
 import org.apache.flink.table.gateway.rest.header.SqlGatewayMessageHeaders;
 import org.apache.flink.table.gateway.rest.message.operation.OperationHandleIdPathParameter;
 import org.apache.flink.table.gateway.rest.message.session.SessionHandleIdPathParameter;
-import org.apache.flink.table.gateway.rest.message.statement.FetchResultsRequestBody;
 import org.apache.flink.table.gateway.rest.message.statement.FetchResultsResponseBody;
 import org.apache.flink.table.gateway.rest.message.statement.FetchResultsTokenParameters;
 import org.apache.flink.table.gateway.rest.message.statement.FetchResultsTokenPathParameter;
@@ -32,7 +32,7 @@ import org.apache.flink.shaded.netty4.io.netty.handler.codec.http.HttpResponseSt
 /** Message headers for fetching results. */
 public class FetchResultsHeaders
         implements SqlGatewayMessageHeaders<
-                FetchResultsRequestBody, FetchResultsResponseBody, FetchResultsTokenParameters> {
+                EmptyRequestBody, FetchResultsResponseBody, FetchResultsTokenParameters> {
 
     private static final FetchResultsHeaders INSTANCE = new FetchResultsHeaders();
 
@@ -86,8 +86,8 @@ public class FetchResultsHeaders
     }
 
     @Override
-    public Class<FetchResultsRequestBody> getRequestClass() {
-        return FetchResultsRequestBody.class;
+    public Class<EmptyRequestBody> getRequestClass() {
+        return EmptyRequestBody.class;
     }
 
     @Override

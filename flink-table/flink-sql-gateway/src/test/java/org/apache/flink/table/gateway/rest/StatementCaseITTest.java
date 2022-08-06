@@ -23,6 +23,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.ExecutionOptions;
 import org.apache.flink.core.testutils.CommonTestUtils;
 import org.apache.flink.runtime.rest.RestClient;
+import org.apache.flink.runtime.rest.messages.EmptyRequestBody;
 import org.apache.flink.runtime.rest.messages.MessageHeaders;
 import org.apache.flink.runtime.rest.messages.MessageParameters;
 import org.apache.flink.runtime.rest.messages.RequestBody;
@@ -41,7 +42,6 @@ import org.apache.flink.table.gateway.rest.header.statement.FetchResultsHeaders;
 import org.apache.flink.table.gateway.rest.message.session.SessionMessageParameters;
 import org.apache.flink.table.gateway.rest.message.statement.ExecuteStatementRequestBody;
 import org.apache.flink.table.gateway.rest.message.statement.ExecuteStatementResponseBody;
-import org.apache.flink.table.gateway.rest.message.statement.FetchResultsRequestBody;
 import org.apache.flink.table.gateway.rest.message.statement.FetchResultsResponseBody;
 import org.apache.flink.table.gateway.rest.message.statement.FetchResultsTokenParameters;
 import org.apache.flink.table.planner.functions.casting.RowDataToStringConverterImpl;
@@ -59,6 +59,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -128,7 +129,7 @@ class StatementCaseITTest extends AbstractSqlGatewayStatementITCase {
     protected String runSingleStatement(String statement) throws Exception {
 
         ExecuteStatementRequestBody executeStatementRequestBody =
-                new ExecuteStatementRequestBody(statement, 0L);
+                new ExecuteStatementRequestBody(statement, 0L, new HashMap<>());
         CompletableFuture<ExecuteStatementResponseBody> response =
                 sendRequest(
                         executeStatementHeaders,
@@ -159,12 +160,11 @@ class StatementCaseITTest extends AbstractSqlGatewayStatementITCase {
 
         FetchResultsResponseBody fetchResultsResponseBody =
                 fetchResults(sessionHandle, operationHandle, 0L);
+
+        // If the ExceptionInfo is not null, throw it by throwing an Exception
         ExceptionInfo exceptionInfo = fetchResultsResponseBody.getExceptionInfo();
         if (exceptionInfo != null) {
-            throw new Exception(
-                    String.format(
-                            "%s: %s",
-                            exceptionInfo.getRootClassName(), exceptionInfo.getMessage()));
+            throw new Exception(exceptionInfo.getRootCause());
         }
 
         ResultSet resultSet = fetchResultsResponseBody.getResults();
@@ -190,13 +190,13 @@ class StatementCaseITTest extends AbstractSqlGatewayStatementITCase {
     FetchResultsResponseBody fetchResults(
             SessionHandle sessionHandle, OperationHandle operationHandle, Long token)
             throws Exception {
-        FetchResultsRequestBody fetchResultsRequestBody =
-                new FetchResultsRequestBody(Integer.MAX_VALUE);
         FetchResultsTokenParameters fetchResultsTokenParameters =
                 new FetchResultsTokenParameters(sessionHandle, operationHandle, token);
         CompletableFuture<FetchResultsResponseBody> response =
                 sendRequest(
-                        fetchResultsHeaders, fetchResultsTokenParameters, fetchResultsRequestBody);
+                        fetchResultsHeaders,
+                        fetchResultsTokenParameters,
+                        EmptyRequestBody.getInstance());
         return response.get();
     }
 
@@ -257,12 +257,20 @@ class StatementCaseITTest extends AbstractSqlGatewayStatementITCase {
         }
 
         private void fetch() throws Exception {
-            ResultSet resultSet =
-                    StatementCaseITTest.this
-                            .fetchResults(sessionHandle, operationHandle, token)
-                            .getResults();
-            token = resultSet.getNextToken();
+            FetchResultsResponseBody fetchResultsResponseBody =
+                    StatementCaseITTest.this.fetchResults(sessionHandle, operationHandle, token);
+            String nextResultUri = fetchResultsResponseBody.getNextResultUri();
+            ResultSet resultSet = fetchResultsResponseBody.getResults();
+            token = parseTokenFromUri(nextResultUri);
             fetchedRows = resultSet.getData().iterator();
         }
+    }
+
+    private static Long parseTokenFromUri(String uri) {
+        if (uri.length() == 0) {
+            return null;
+        }
+        String[] split = uri.split("/");
+        return Long.valueOf(split[split.length - 1]);
     }
 }

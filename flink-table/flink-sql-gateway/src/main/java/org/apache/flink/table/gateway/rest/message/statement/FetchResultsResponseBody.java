@@ -22,11 +22,9 @@ import org.apache.flink.runtime.rest.messages.ResponseBody;
 import org.apache.flink.table.gateway.api.results.ExceptionInfo;
 import org.apache.flink.table.gateway.api.results.ResultSet;
 
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonInclude;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonProperty;
 
 /** {@link ResponseBody} for execute a statement. */
-@JsonInclude(JsonInclude.Include.NON_NULL)
 public class FetchResultsResponseBody implements ResponseBody {
 
     private static final String FIELD_RESULT_TYPE = "result_type";

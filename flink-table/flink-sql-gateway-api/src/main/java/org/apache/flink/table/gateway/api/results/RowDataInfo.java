@@ -19,43 +19,41 @@
 package org.apache.flink.table.gateway.api.results;
 
 import org.apache.flink.annotation.PublicEvolving;
+import org.apache.flink.table.data.RowData;
 import org.apache.flink.util.Preconditions;
 
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonCreator;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonProperty;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JsonNode;
 
-import javax.annotation.Nullable;
+import java.util.List;
 
-/** ExceptionInfo for SQL gateway service. */
+/** A RowDataInfo info represents a {@link RowData}. */
 @PublicEvolving
-public class ExceptionInfo {
+public class RowDataInfo {
 
-    private static final String FIELD_EXCEPTION_ROOT_CAUSE = "rootCause";
-    private static final String FIELD_EXCEPTION_STACK = "exceptionStack";
+    private static final String FIELD_NAME_KIND = "kind";
+    private static final String FIELD_NAME_FIELDS = "fields";
 
-    @JsonProperty(FIELD_EXCEPTION_ROOT_CAUSE)
-    @Nullable
-    private final String rootCause;
+    @JsonProperty(FIELD_NAME_KIND)
+    private final String kind;
 
-    @JsonProperty(FIELD_EXCEPTION_STACK)
-    @Nullable
-    private final String stack;
+    @JsonProperty(FIELD_NAME_FIELDS)
+    private final List<JsonNode> fields;
 
     @JsonCreator
-    public ExceptionInfo(
-            @Nullable @JsonProperty(FIELD_EXCEPTION_ROOT_CAUSE) String rootCause,
-            @Nullable @JsonProperty(FIELD_EXCEPTION_STACK) String stack) {
-        this.rootCause = Preconditions.checkNotNull(rootCause, "root_cause must not be null");
-        this.stack = Preconditions.checkNotNull(stack, "stack must not be null");
+    public RowDataInfo(
+            @JsonProperty(FIELD_NAME_KIND) String kind,
+            @JsonProperty(FIELD_NAME_FIELDS) List<JsonNode> fields) {
+        this.kind = Preconditions.checkNotNull(kind, "kind must not be null");
+        this.fields = Preconditions.checkNotNull(fields, "fields must not be null");
     }
 
-    @Nullable
-    public String getRootCause() {
-        return rootCause;
+    public String getKind() {
+        return kind;
     }
 
-    @Nullable
-    public String getStack() {
-        return stack;
+    public List<JsonNode> getFields() {
+        return fields;
     }
 }

@@ -36,17 +36,15 @@ import java.util.stream.Collectors;
 
 /** The collection of the results. */
 @PublicEvolving
-@JsonSerialize(using = ResultSetJsonSerializer.class)
-@JsonDeserialize(using = ResultSetJsonDeserializer.class)
+@JsonSerialize(using = JsonResultSetSerializer.class)
+@JsonDeserialize(using = JsonResultSetDeserializer.class)
 public class ResultSet implements Serializable {
 
-    public static final String FIELD_NAME_RESULT_TYPE = "result_type";
+    private static final long serialVersionUID = 1L;
 
     public static final String FIELD_NAME_COLUMN_INFOS = "columns";
 
     public static final String FIELD_NAME_DATA = "data";
-
-    public static final String FIELD_NAME_NEXT_TOKEN = "next_token";
 
     private final ResultType resultType;
 
