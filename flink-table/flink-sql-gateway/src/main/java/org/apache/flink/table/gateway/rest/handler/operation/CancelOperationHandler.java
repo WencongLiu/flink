@@ -43,8 +43,7 @@ public class CancelOperationHandler extends AbstractOperationHandler {
     }
 
     @Override
-    public boolean execute(SessionHandle sessionHandle, OperationHandle operationHandle) {
+    public void execute(SessionHandle sessionHandle, OperationHandle operationHandle) {
         service.cancelOperation(sessionHandle, operationHandle);
-        return true;
     }
 }

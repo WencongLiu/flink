@@ -22,6 +22,7 @@ import org.apache.flink.runtime.rest.messages.EmptyRequestBody;
 import org.apache.flink.runtime.rest.messages.MessageHeaders;
 import org.apache.flink.table.gateway.api.SqlGatewayService;
 import org.apache.flink.table.gateway.api.operation.OperationHandle;
+import org.apache.flink.table.gateway.api.operation.OperationStatus;
 import org.apache.flink.table.gateway.api.session.SessionHandle;
 import org.apache.flink.table.gateway.rest.message.operation.OperationMessageParameters;
 import org.apache.flink.table.gateway.rest.message.operation.OperationStatusResponseBody;
@@ -43,8 +44,12 @@ public class CloseOperationHandler extends AbstractOperationHandler {
     }
 
     @Override
-    public boolean execute(SessionHandle sessionHandle, OperationHandle operationHandle) {
+    public void execute(SessionHandle sessionHandle, OperationHandle operationHandle) {
         service.closeOperation(sessionHandle, operationHandle);
-        return false;
+    }
+
+    @Override
+    protected String getStatus(SessionHandle sessionHandle, OperationHandle operationHandle) {
+        return OperationStatus.CLOSED.name();
     }
 }

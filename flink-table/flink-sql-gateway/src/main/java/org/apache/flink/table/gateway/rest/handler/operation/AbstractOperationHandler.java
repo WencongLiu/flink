@@ -24,7 +24,6 @@ import org.apache.flink.runtime.rest.messages.EmptyRequestBody;
 import org.apache.flink.runtime.rest.messages.MessageHeaders;
 import org.apache.flink.table.gateway.api.SqlGatewayService;
 import org.apache.flink.table.gateway.api.operation.OperationHandle;
-import org.apache.flink.table.gateway.api.operation.OperationStatus;
 import org.apache.flink.table.gateway.api.session.SessionHandle;
 import org.apache.flink.table.gateway.api.utils.SqlGatewayException;
 import org.apache.flink.table.gateway.rest.handler.AbstractSqlGatewayRestHandler;
@@ -57,20 +56,11 @@ public abstract class AbstractOperationHandler
         super(service, responseHeaders, messageHeaders);
     }
 
-    private String getStatus(SessionHandle sessionHandle, OperationHandle operationHandle) {
-        if (execute(sessionHandle, operationHandle)) {
-            return this.service
-                    .getOperationInfo(sessionHandle, operationHandle)
-                    .getStatus()
-                    .toString();
-        } else {
-            return OperationStatus.CLOSED.toString();
-        }
+    protected String getStatus(SessionHandle sessionHandle, OperationHandle operationHandle) {
+        return this.service.getOperationInfo(sessionHandle, operationHandle).getStatus().toString();
     }
 
-    boolean execute(SessionHandle sessionHandle, OperationHandle operationHandle) {
-        return true;
-    }
+    protected void execute(SessionHandle sessionHandle, OperationHandle operationHandle) {}
 
     @Override
     protected CompletableFuture<OperationStatusResponseBody> handleRequest(
@@ -81,6 +71,7 @@ public abstract class AbstractOperationHandler
                     request.getPathParameter(SessionHandleIdPathParameter.class);
             OperationHandle operationHandle =
                     request.getPathParameter(OperationHandleIdPathParameter.class);
+            execute(sessionHandle, operationHandle);
             String status = getStatus(sessionHandle, operationHandle);
             return CompletableFuture.completedFuture(new OperationStatusResponseBody(status));
         } catch (SqlGatewayException e) {
