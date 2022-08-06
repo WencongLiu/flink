@@ -35,7 +35,7 @@ import java.io.IOException;
  * @see ObjectIdentifierJsonSerializer for the reverse operation
  */
 @Internal
-final class ObjectIdentifierJsonDeserializer extends StdDeserializer<ObjectIdentifier> {
+public final class ObjectIdentifierJsonDeserializer extends StdDeserializer<ObjectIdentifier> {
     private static final long serialVersionUID = 1L;
 
     ObjectIdentifierJsonDeserializer() {
@@ -48,7 +48,7 @@ final class ObjectIdentifierJsonDeserializer extends StdDeserializer<ObjectIdent
         return deserialize(jsonParser.getValueAsString(), SerdeContext.get(ctx));
     }
 
-    static ObjectIdentifier deserialize(String identifierStr, SerdeContext ctx) {
+    public static ObjectIdentifier deserialize(String identifierStr, SerdeContext ctx) {
         final UnresolvedIdentifier unresolvedIdentifier =
                 ctx.getParser().parseIdentifier(identifierStr);
 
