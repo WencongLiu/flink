@@ -30,9 +30,10 @@ import org.apache.flink.table.gateway.rest.util.SqlGatewayRestAPIVersion;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /** Handler to get rest api version. */
 public class GetApiVersionHandler
@@ -53,6 +54,9 @@ public class GetApiVersionHandler
             @Nonnull HandlerRequest<EmptyRequestBody> request) {
         return CompletableFuture.completedFuture(
                 new GetApiVersionResponseBody(
-                        Collections.singletonList(SqlGatewayRestAPIVersion.V1.toString())));
+                        Arrays.stream(SqlGatewayRestAPIVersion.values())
+                                .filter(SqlGatewayRestAPIVersion::isStableVersion)
+                                .map(Enum::name)
+                                .collect(Collectors.toList())));
     }
 }

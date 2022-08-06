@@ -31,9 +31,10 @@ import org.apache.flink.table.gateway.rest.util.SqlGatewayRestAPIVersion;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -63,7 +64,11 @@ class UtilCaseITTest extends RestAPIITTestBase {
         CompletableFuture<GetApiVersionResponseBody> response2 =
                 sendRequest(getApiVersionHeaders, emptyParameters, emptyRequestBody);
         List<String> versions = response2.get().getVersions();
-        assertThat(Collections.singletonList(SqlGatewayRestAPIVersion.V1.toString()))
+        assertThat(
+                        Arrays.stream(SqlGatewayRestAPIVersion.values())
+                                .filter(SqlGatewayRestAPIVersion::isStableVersion)
+                                .map(Enum::name)
+                                .collect(Collectors.toList()))
                 .isEqualTo(versions);
     }
 }
