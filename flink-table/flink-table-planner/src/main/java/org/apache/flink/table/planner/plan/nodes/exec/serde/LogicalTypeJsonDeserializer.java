@@ -97,7 +97,7 @@ import static org.apache.flink.table.planner.plan.nodes.exec.serde.LogicalTypeJs
  * @see LogicalTypeJsonSerializer for the reverse operation
  */
 @Internal
-final class LogicalTypeJsonDeserializer extends StdDeserializer<LogicalType> {
+public final class LogicalTypeJsonDeserializer extends StdDeserializer<LogicalType> {
     private static final long serialVersionUID = 1L;
 
     LogicalTypeJsonDeserializer() {
@@ -399,7 +399,7 @@ final class LogicalTypeJsonDeserializer extends StdDeserializer<LogicalType> {
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private static LogicalType deserializeSpecializedRaw(
+    public static LogicalType deserializeSpecializedRaw(
             JsonNode logicalTypeNode, SerdeContext serdeContext) {
         final Class<?> clazz =
                 loadClass(logicalTypeNode.get(FIELD_NAME_CLASS).asText(), serdeContext, "RAW type");

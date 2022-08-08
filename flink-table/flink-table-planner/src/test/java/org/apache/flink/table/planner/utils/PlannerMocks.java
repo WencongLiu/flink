@@ -71,7 +71,7 @@ public class PlannerMocks {
 
         this.functionCatalog =
                 new FunctionCatalog(tableConfig, resourceManager, catalogManager, moduleManager);
-
+        ClassLoader classLoader = PlannerMocks.class.getClassLoader();
         this.plannerContext =
                 new PlannerContext(
                         isBatchMode,

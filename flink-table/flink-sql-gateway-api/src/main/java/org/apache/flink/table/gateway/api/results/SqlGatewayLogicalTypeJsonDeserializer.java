@@ -20,52 +20,30 @@ package org.apache.flink.table.gateway.api.results;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.ExecutionConfig;
-import org.apache.flink.api.common.typeutils.TypeSerializer;
-
 import org.apache.flink.configuration.Configuration;
-
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JsonDeserializer;
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
-
 import org.apache.flink.table.api.TableConfig;
 import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.api.config.TableConfigOptions;
-import org.apache.flink.table.api.config.TableConfigOptions.CatalogPlanRestore;
-import org.apache.flink.table.catalog.Catalog;
 import org.apache.flink.table.catalog.CatalogManager;
 import org.apache.flink.table.catalog.DataTypeFactory;
 import org.apache.flink.table.catalog.FunctionCatalog;
 import org.apache.flink.table.catalog.GenericInMemoryCatalog;
-import org.apache.flink.table.catalog.ObjectIdentifier;
-import org.apache.flink.table.catalog.UnresolvedIdentifier;
-import org.apache.flink.table.dataview.NullSerializer;
 import org.apache.flink.table.module.ModuleManager;
 import org.apache.flink.table.planner.catalog.CatalogManagerCalciteSchema;
 import org.apache.flink.table.planner.delegation.ParserImpl;
 import org.apache.flink.table.planner.delegation.PlannerContext;
-import org.apache.flink.table.planner.plan.nodes.exec.serde.DataTypeJsonDeserializer;
-import org.apache.flink.table.planner.plan.nodes.exec.serde.LogicalTypeJsonSerializer;
-import org.apache.flink.table.planner.plan.nodes.exec.serde.ObjectIdentifierJsonDeserializer;
 import org.apache.flink.table.planner.plan.nodes.exec.serde.SerdeContext;
 import org.apache.flink.table.resource.ResourceManager;
-import org.apache.flink.table.runtime.typeutils.ExternalSerializer;
-import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.logical.ArrayType;
 import org.apache.flink.table.types.logical.BinaryType;
 import org.apache.flink.table.types.logical.CharType;
-import org.apache.flink.table.types.logical.DistinctType;
 import org.apache.flink.table.types.logical.LocalZonedTimestampType;
 import org.apache.flink.table.types.logical.LogicalType;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.MapType;
 import org.apache.flink.table.types.logical.MultisetType;
-import org.apache.flink.table.types.logical.RawType;
 import org.apache.flink.table.types.logical.RowType;
 import org.apache.flink.table.types.logical.RowType.RowField;
-import org.apache.flink.table.types.logical.StructuredType;
-import org.apache.flink.table.types.logical.StructuredType.StructuredAttribute;
-import org.apache.flink.table.types.logical.StructuredType.StructuredComparison;
-import org.apache.flink.table.types.logical.SymbolType;
 import org.apache.flink.table.types.logical.TimestampKind;
 import org.apache.flink.table.types.logical.TimestampType;
 import org.apache.flink.table.types.logical.VarBinaryType;
@@ -74,11 +52,10 @@ import org.apache.flink.table.types.logical.ZonedTimestampType;
 
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.core.JsonParser;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.DeserializationContext;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JsonDeserializer;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JsonNode;
-import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.deser.std.StdDeserializer;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.node.ArrayNode;
-
-import javax.annotation.Nullable;
 
 import java.io.IOException;
 import java.net.URL;
@@ -87,11 +64,17 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.apache.calcite.jdbc.CalciteSchemaBuilder.asRootSchema;
-import static org.apache.flink.table.gateway.api.results.SqlGatewayLogicalTypeJsonSerializer.FIELD_NAME_EXTERNAL_DATA_TYPE;
+import static org.apache.flink.table.gateway.api.results.SqlGatewayLogicalTypeJsonSerializer.FIELD_NAME_ELEMENT_TYPE;
+import static org.apache.flink.table.gateway.api.results.SqlGatewayLogicalTypeJsonSerializer.FIELD_NAME_FIELDS;
+import static org.apache.flink.table.gateway.api.results.SqlGatewayLogicalTypeJsonSerializer.FIELD_NAME_FIELD_NAME;
+import static org.apache.flink.table.gateway.api.results.SqlGatewayLogicalTypeJsonSerializer.FIELD_NAME_FIELD_TYPE;
+import static org.apache.flink.table.gateway.api.results.SqlGatewayLogicalTypeJsonSerializer.FIELD_NAME_KEY_TYPE;
 import static org.apache.flink.table.gateway.api.results.SqlGatewayLogicalTypeJsonSerializer.FIELD_NAME_LENGTH;
 import static org.apache.flink.table.gateway.api.results.SqlGatewayLogicalTypeJsonSerializer.FIELD_NAME_NULLABLE;
+import static org.apache.flink.table.gateway.api.results.SqlGatewayLogicalTypeJsonSerializer.FIELD_NAME_PRECISION;
 import static org.apache.flink.table.gateway.api.results.SqlGatewayLogicalTypeJsonSerializer.FIELD_NAME_TYPE_NAME;
-import static org.apache.flink.table.planner.plan.nodes.exec.serde.JsonSerdeUtil.loadClass;
+import static org.apache.flink.table.gateway.api.results.SqlGatewayLogicalTypeJsonSerializer.FIELD_NAME_VALUE_TYPE;
+import static org.apache.flink.table.planner.plan.nodes.exec.serde.LogicalTypeJsonDeserializer.deserializeSpecializedRaw;
 
 /**
  * JSON deserializer for {@link LogicalType}.
@@ -142,30 +125,39 @@ final class SqlGatewayLogicalTypeJsonDeserializer extends JsonDeserializer<Logic
         final LogicalTypeRoot typeRoot =
                 LogicalTypeRoot.valueOf(logicalTypeNode.get(FIELD_NAME_TYPE_NAME).asText());
         switch (typeRoot) {
-            case CHAR:
             case VARCHAR:
-            case BINARY:
             case VARBINARY:
+            case BOOLEAN:
+            case TINYINT:
+            case SMALLINT:
+            case BIGINT:
+            case DOUBLE:
+            case FLOAT:
+            case NULL:
+            case INTEGER:
+            case DECIMAL:
+            case DATE:
+            case SYMBOL:
                 return deserializeZeroLengthString(typeRoot, logicalTypeNode);
             case TIMESTAMP_WITHOUT_TIME_ZONE:
             case TIMESTAMP_WITH_TIME_ZONE:
             case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
                 return deserializeTimestamp(typeRoot, logicalTypeNode);
+            case MAP:
+                return deserializeMap(logicalTypeNode, serdeContext);
             case ARRAY:
             case MULTISET:
                 return deserializeCollection(typeRoot, logicalTypeNode, serdeContext);
-            case MAP:
-                return deserializeMap(logicalTypeNode, serdeContext);
             case ROW:
                 return deserializeRow(logicalTypeNode, serdeContext);
             case RAW:
                 return deserializeSpecializedRaw(logicalTypeNode, serdeContext);
             default:
-                throw new TableException("Unsupported type root: " + typeRoot);
+                throw new TableException("Sql Gateway doesn't support this type root: " + typeRoot);
         }
     }
 
-    private static LogicalType deserializeZeroLengthString(
+    private static LogicalType deserialize(
             LogicalTypeRoot typeRoot, JsonNode logicalTypeNode) {
         final int length = logicalTypeNode.get(FIELD_NAME_LENGTH).asInt();
         if (length != 0) {
@@ -188,8 +180,7 @@ final class SqlGatewayLogicalTypeJsonDeserializer extends JsonDeserializer<Logic
     private static LogicalType deserializeTimestamp(
             LogicalTypeRoot typeRoot, JsonNode logicalTypeNode) {
         final int precision = logicalTypeNode.get(FIELD_NAME_PRECISION).asInt();
-        final TimestampKind kind =
-                TimestampKind.valueOf(logicalTypeNode.get(FIELD_NAME_TIMESTAMP_KIND).asText());
+        final TimestampKind kind = TimestampKind.REGULAR;
         switch (typeRoot) {
             case TIMESTAMP_WITHOUT_TIME_ZONE:
                 return new TimestampType(true, kind, precision);
@@ -231,192 +222,9 @@ final class SqlGatewayLogicalTypeJsonDeserializer extends JsonDeserializer<Logic
             final String fieldName = fieldNode.get(FIELD_NAME_FIELD_NAME).asText();
             final LogicalType fieldType =
                     deserialize(fieldNode.get(FIELD_NAME_FIELD_TYPE), serdeContext);
-            final String fieldDescription;
-            if (fieldNode.has(FIELD_NAME_FIELD_DESCRIPTION)) {
-                fieldDescription = fieldNode.get(FIELD_NAME_FIELD_DESCRIPTION).asText();
-            } else {
-                fieldDescription = null;
-            }
-            fields.add(new RowField(fieldName, fieldType, fieldDescription));
+            fields.add(new RowField(fieldName, fieldType, null));
         }
         return new RowType(fields);
-    }
-
-    private static LogicalType deserializeDistinctType(
-            JsonNode logicalTypeNode, SerdeContext serdeContext) {
-        final ObjectIdentifier identifier =
-                ObjectIdentifierJsonDeserializer.deserialize(
-                        logicalTypeNode.get(FIELD_NAME_OBJECT_IDENTIFIER).asText(), serdeContext);
-        final CatalogPlanRestore restoreStrategy =
-                serdeContext
-                        .getConfiguration()
-                        .get(TableConfigOptions.PLAN_RESTORE_CATALOG_OBJECTS);
-        switch (restoreStrategy) {
-            case ALL:
-                if (logicalTypeNode.has(FIELD_NAME_SOURCE_TYPE)) {
-                    return deserializeDistinctTypeFromPlan(
-                            identifier, logicalTypeNode, serdeContext);
-                }
-                return deserializeUserDefinedTypeFromCatalog(identifier, serdeContext);
-            case ALL_ENFORCED:
-                return deserializeDistinctTypeFromPlan(identifier, logicalTypeNode, serdeContext);
-            case IDENTIFIER:
-                return deserializeUserDefinedTypeFromCatalog(identifier, serdeContext);
-            default:
-                throw new TableException("Unsupported catalog restore strategy.");
-        }
-    }
-
-    private static LogicalType deserializeDistinctTypeFromPlan(
-            ObjectIdentifier identifier, JsonNode logicalTypeNode, SerdeContext serdeContext) {
-        final LogicalType sourceType =
-                deserialize(logicalTypeNode.get(FIELD_NAME_SOURCE_TYPE), serdeContext);
-        final DistinctType.Builder builder = DistinctType.newBuilder(identifier, sourceType);
-        if (logicalTypeNode.has(FIELD_NAME_FIELD_DESCRIPTION)) {
-            builder.description(logicalTypeNode.get(FIELD_NAME_FIELD_DESCRIPTION).asText());
-        }
-        return builder.build();
-    }
-
-    private static LogicalType deserializeStructuredType(
-            JsonNode logicalTypeNode, SerdeContext serdeContext) {
-        // inline structured types have no object identifier
-        if (!logicalTypeNode.has(FIELD_NAME_OBJECT_IDENTIFIER)) {
-            return deserializeStructuredTypeFromPlan(logicalTypeNode, serdeContext);
-        }
-
-        // for catalog structured types
-        final ObjectIdentifier identifier =
-                ObjectIdentifierJsonDeserializer.deserialize(
-                        logicalTypeNode.get(FIELD_NAME_OBJECT_IDENTIFIER).asText(), serdeContext);
-        final CatalogPlanRestore restoreStrategy =
-                serdeContext
-                        .getConfiguration()
-                        .get(TableConfigOptions.PLAN_RESTORE_CATALOG_OBJECTS);
-        switch (restoreStrategy) {
-            case ALL:
-                if (logicalTypeNode.has(FIELD_NAME_ATTRIBUTES)) {
-                    return deserializeStructuredTypeFromPlan(logicalTypeNode, serdeContext);
-                }
-                return deserializeUserDefinedTypeFromCatalog(identifier, serdeContext);
-            case ALL_ENFORCED:
-                return deserializeStructuredTypeFromPlan(logicalTypeNode, serdeContext);
-            case IDENTIFIER:
-                return deserializeUserDefinedTypeFromCatalog(identifier, serdeContext);
-            default:
-                throw new TableException("Unsupported catalog restore strategy.");
-        }
-    }
-
-    private static LogicalType deserializeUserDefinedTypeFromCatalog(
-            ObjectIdentifier identifier, SerdeContext serdeContext) {
-        final DataTypeFactory dataTypeFactory =
-                serdeContext.getFlinkContext().getCatalogManager().getDataTypeFactory();
-        return dataTypeFactory.createLogicalType(UnresolvedIdentifier.of(identifier));
-    }
-
-    private static LogicalType deserializeStructuredTypeFromPlan(
-            JsonNode logicalTypeNode, SerdeContext serdeContext) {
-        final ObjectIdentifier identifier;
-        if (logicalTypeNode.has(FIELD_NAME_OBJECT_IDENTIFIER)) {
-            identifier =
-                    ObjectIdentifierJsonDeserializer.deserialize(
-                            logicalTypeNode.get(FIELD_NAME_OBJECT_IDENTIFIER).asText(),
-                            serdeContext);
-        } else {
-            identifier = null;
-        }
-
-        final Class<?> implementationClass;
-        if (logicalTypeNode.has(FIELD_NAME_IMPLEMENTATION_CLASS)) {
-            implementationClass =
-                    loadClass(
-                            logicalTypeNode.get(FIELD_NAME_IMPLEMENTATION_CLASS).asText(),
-                            serdeContext,
-                            "structured type");
-        } else {
-            implementationClass = null;
-        }
-
-        final StructuredType.Builder builder;
-        if (identifier != null && implementationClass != null) {
-            builder = StructuredType.newBuilder(identifier, implementationClass);
-        } else if (identifier != null) {
-            builder = StructuredType.newBuilder(identifier);
-        } else {
-            builder = StructuredType.newBuilder(implementationClass);
-        }
-
-        if (logicalTypeNode.has(FIELD_NAME_DESCRIPTION)) {
-            builder.description(logicalTypeNode.get(FIELD_NAME_FIELD_DESCRIPTION).asText());
-        }
-
-        final ArrayNode attributeNodes = (ArrayNode) logicalTypeNode.get(FIELD_NAME_ATTRIBUTES);
-        final List<StructuredAttribute> attributes = new ArrayList<>();
-        for (JsonNode attributeNode : attributeNodes) {
-            final String attributeName = attributeNode.get(FIELD_NAME_ATTRIBUTE_NAME).asText();
-            final LogicalType attributeType =
-                    deserialize(attributeNode.get(FIELD_NAME_ATTRIBUTE_TYPE), serdeContext);
-            final String attributeDescription;
-            if (attributeNode.has(FIELD_NAME_ATTRIBUTE_DESCRIPTION)) {
-                attributeDescription = attributeNode.get(FIELD_NAME_ATTRIBUTE_DESCRIPTION).asText();
-            } else {
-                attributeDescription = null;
-            }
-            attributes.add(
-                    new StructuredAttribute(attributeName, attributeType, attributeDescription));
-        }
-        builder.attributes(attributes);
-
-        if (logicalTypeNode.has(FIELD_NAME_FINAL)) {
-            builder.setFinal(logicalTypeNode.get(FIELD_NAME_FINAL).asBoolean());
-        }
-
-        if (logicalTypeNode.has(FIELD_NAME_INSTANTIABLE)) {
-            builder.setInstantiable(logicalTypeNode.get(FIELD_NAME_INSTANTIABLE).asBoolean());
-        }
-
-        if (logicalTypeNode.has(FIELD_NAME_COMPARISON)) {
-            builder.comparison(
-                    StructuredComparison.valueOf(
-                            logicalTypeNode.get(FIELD_NAME_COMPARISON).asText()));
-        }
-
-        if (logicalTypeNode.has(FIELD_NAME_SUPER_TYPE)) {
-            final StructuredType superType =
-                    (StructuredType)
-                            deserialize(logicalTypeNode.get(FIELD_NAME_SUPER_TYPE), serdeContext);
-            builder.superType(superType);
-        }
-
-        return builder.build();
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static LogicalType deserializeSpecializedRaw(
-            JsonNode logicalTypeNode, SerdeContext serdeContext) {
-        final Class<?> clazz =
-                loadClass(logicalTypeNode.get(FIELD_NAME_CLASS).asText(), serdeContext, "RAW type");
-
-        final TypeSerializer<?> serializer;
-        if (logicalTypeNode.has(FIELD_NAME_SPECIAL_SERIALIZER)) {
-            final String specialSerializer =
-                    logicalTypeNode.get(FIELD_NAME_SPECIAL_SERIALIZER).asText();
-            if (FIELD_VALUE_EXTERNAL_SERIALIZER_NULL.equals(specialSerializer)) {
-                serializer = NullSerializer.INSTANCE;
-            } else {
-                throw new TableException("Unknown external serializer: " + specialSerializer);
-            }
-        } else if (logicalTypeNode.has(FIELD_NAME_EXTERNAL_DATA_TYPE)) {
-            final DataType dataType =
-                    DataTypeJsonDeserializer.deserialize(
-                            logicalTypeNode.get(FIELD_NAME_EXTERNAL_DATA_TYPE), serdeContext);
-            serializer = ExternalSerializer.of(dataType);
-        } else {
-            throw new TableException("Invalid RAW type.");
-        }
-
-        return new RawType(clazz, serializer);
     }
 
     // Create the default SerdeContext
@@ -433,20 +241,21 @@ final class SqlGatewayLogicalTypeJsonDeserializer extends JsonDeserializer<Logic
                 resourceManager,
                 catalogManager,
                 moduleManager);
-        PlannerContext plannerContext = new PlannerContext(
-                false,
-                tableConfig,
-                moduleManager,
-                functionCatalog,
-                catalogManager,
-                asRootSchema(new CatalogManagerCalciteSchema(catalogManager, true)),
-                Collections.emptyList(),
-                SqlGatewayLogicalTypeJsonDeserializer.class.getClassLoader());
+        PlannerContext plannerContext =
+                new PlannerContext(
+                        false,
+                        tableConfig,
+                        moduleManager,
+                        functionCatalog,
+                        catalogManager,
+                        asRootSchema(new CatalogManagerCalciteSchema(catalogManager, true)),
+                        Collections.emptyList(),
+                        Thread.currentThread().getContextClassLoader());
         return new SerdeContext(
                 new ParserImpl(null, null, plannerContext::createCalciteParser, null),
                 plannerContext.getFlinkContext(),
                 plannerContext.getTypeFactory(),
-                plannerContext.createFrameworkConfig().getOperatorTable())
+                plannerContext.createFrameworkConfig().getOperatorTable());
     }
 
     // Create the empty catalog manager

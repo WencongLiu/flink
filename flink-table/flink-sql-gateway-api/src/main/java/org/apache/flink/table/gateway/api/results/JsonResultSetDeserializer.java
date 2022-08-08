@@ -65,7 +65,7 @@ public class JsonResultSetDeserializer extends JsonDeserializer<ResultSet> {
         ColumnInfo[] columnInfos = ctx.readValue(columnParser, ColumnInfo[].class);
         List<Column> columns = new ArrayList<>();
         for (ColumnInfo columnInfo : columnInfos) {
-            LogicalType logicalType = columnInfo.getLogicalType();
+            LogicalType logicalType = columnInfo.getType();
             columns.add(
                     Column.physical(
                             columnInfo.getName(), DataTypeUtils.toInternalDataType(logicalType)));

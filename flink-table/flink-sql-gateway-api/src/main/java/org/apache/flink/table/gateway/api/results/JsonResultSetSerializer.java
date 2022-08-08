@@ -63,8 +63,7 @@ public class JsonResultSetSerializer extends JsonSerializer<ResultSet> {
         List<ColumnInfo> columnInfos = new ArrayList<>();
         for (Column column : columns) {
             columnInfos.add(
-                    new ColumnInfo(
-                            column.getName(), column.getDataType().getLogicalType().toString()));
+                    new ColumnInfo(column.getName(), column.getDataType().getLogicalType()));
         }
         serializerProvider.defaultSerializeField(
                 FIELD_NAME_COLUMN_INFOS, columnInfos, jsonGenerator);
