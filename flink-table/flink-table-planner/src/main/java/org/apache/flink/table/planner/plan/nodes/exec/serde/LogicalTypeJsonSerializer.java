@@ -64,7 +64,7 @@ import java.io.IOException;
  * @see LogicalTypeJsonDeserializer for the reverse operation.
  */
 @Internal
-final class LogicalTypeJsonSerializer extends StdSerializer<LogicalType> {
+public final class LogicalTypeJsonSerializer extends StdSerializer<LogicalType> {
     private static final long serialVersionUID = 1L;
 
     // Common fields

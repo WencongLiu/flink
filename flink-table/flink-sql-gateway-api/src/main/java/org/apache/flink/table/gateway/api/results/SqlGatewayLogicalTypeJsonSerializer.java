@@ -45,7 +45,7 @@ import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.Serialize
 import java.io.IOException;
 
 /**
- * JSON serializer for {@link LogicalType}.
+ * Sql Gateway JSON serializer for {@link LogicalType}.
  *
  * <p>Since types are used frequently in every plan, the serializer tries to create a compact JSON
  * whenever possible. The compact representation is {@link LogicalType#asSerializableString()},
@@ -55,54 +55,36 @@ import java.io.IOException;
  */
 @Internal
 final class SqlGatewayLogicalTypeJsonSerializer extends JsonSerializer<LogicalType> {
-    private static final long serialVersionUID = 1L;
 
     // Common fields
     static final String FIELD_NAME_TYPE_NAME = "type";
     static final String FIELD_NAME_NULLABLE = "nullable";
-    static final String FIELD_NAME_DESCRIPTION = "description";
 
-    // CHAR, VARCHAR, BINARY, VARBINARY
+    // Basic Type
+    // 1. CHAR, VARCHAR, STRING, BINARY, VARBINARY, BYTES,
     static final String FIELD_NAME_LENGTH = "length";
 
-    // TIMESTAMP_WITHOUT_TIME_ZONE, TIMESTAMP_WITH_TIME_ZONE, TIMESTAMP_WITH_LOCAL_TIME_ZONE
+    // 2. TIMESTAMP_WITHOUT_TIME_ZONE, TIMESTAMP_WITH_TIME_ZONE, TIMESTAMP_WITH_LOCAL_TIME_ZONE
     static final String FIELD_NAME_PRECISION = "precision";
-    static final String FIELD_NAME_TIMESTAMP_KIND = "kind";
 
-    // ARRAY, MULTISET
-    static final String FIELD_NAME_ELEMENT_TYPE = "elementType";
-
-    // MAP
-    static final String FIELD_NAME_KEY_TYPE = "keyType";
-    static final String FIELD_NAME_VALUE_TYPE = "valueType";
-
-    // ROW
-    static final String FIELD_NAME_FIELDS = "fields";
-    static final String FIELD_NAME_FIELD_NAME = "name";
-    static final String FIELD_NAME_FIELD_TYPE = "fieldType";
-    static final String FIELD_NAME_FIELD_DESCRIPTION = "description";
-
-    // DISTINCT_TYPE
-    static final String FIELD_NAME_SOURCE_TYPE = "sourceType";
-
-    // STRUCTURED_TYPE
-    static final String FIELD_NAME_OBJECT_IDENTIFIER = "objectIdentifier";
-    static final String FIELD_NAME_IMPLEMENTATION_CLASS = "implementationClass";
-    static final String FIELD_NAME_ATTRIBUTES = "attributes";
-    static final String FIELD_NAME_ATTRIBUTE_NAME = "name";
-    static final String FIELD_NAME_ATTRIBUTE_TYPE = "attributeType";
-    static final String FIELD_NAME_ATTRIBUTE_DESCRIPTION = "description";
-    static final String FIELD_NAME_FINAL = "final";
-    static final String FIELD_NAME_INSTANTIABLE = "instantiable";
-    static final String FIELD_NAME_COMPARISON = "comparison";
-    static final String FIELD_NAME_SUPER_TYPE = "superType";
-
-    // RAW
+    // 3. RAW
     static final String FIELD_NAME_CLASS = "class";
     static final String FIELD_NAME_EXTERNAL_DATA_TYPE = "externalDataType";
     static final String FIELD_NAME_SPECIAL_SERIALIZER = "specialSerializer";
     static final String FIELD_VALUE_EXTERNAL_SERIALIZER_NULL = "NULL";
 
+    // Collection Type
+    // 1. MAP
+    static final String FIELD_NAME_KEY_TYPE = "keyType";
+    static final String FIELD_NAME_VALUE_TYPE = "valueType";
+
+    // 2. ARRAY, MULTISET
+    static final String FIELD_NAME_ELEMENT_TYPE = "elementType";
+
+    // 3. ROW
+    static final String FIELD_NAME_FIELDS = "fields";
+    static final String FIELD_NAME_FIELD_NAME = "name";
+    static final String FIELD_NAME_FIELD_TYPE = "fieldType";
 
     @Override
     public void serialize(
@@ -113,7 +95,7 @@ final class SqlGatewayLogicalTypeJsonSerializer extends JsonSerializer<LogicalTy
 
         serializeInternal(logicalType, jsonGenerator, serializerProvider);
     }
-    
+
     private static void serializeInternal(
             LogicalType logicalType,
             JsonGenerator jsonGenerator,
@@ -124,7 +106,7 @@ final class SqlGatewayLogicalTypeJsonSerializer extends JsonSerializer<LogicalTy
         jsonGenerator.writeStringField(FIELD_NAME_TYPE_NAME, logicalType.getTypeRoot().name());
         if (!logicalType.isNullable()) {
             jsonGenerator.writeBooleanField(FIELD_NAME_NULLABLE, false);
-        }else {
+        } else {
             jsonGenerator.writeBooleanField(FIELD_NAME_NULLABLE, true);
         }
 
@@ -137,28 +119,16 @@ final class SqlGatewayLogicalTypeJsonSerializer extends JsonSerializer<LogicalTy
                 break;
             case TIMESTAMP_WITHOUT_TIME_ZONE:
                 final TimestampType timestampType = (TimestampType) logicalType;
-                serializeTimestamp(
-                        timestampType.getPrecision(),
-                        timestampType.getKind(),
-                        jsonGenerator,
-                        serializerProvider);
+                serializeTimestamp(timestampType.getPrecision(), jsonGenerator);
                 break;
             case TIMESTAMP_WITH_TIME_ZONE:
                 final ZonedTimestampType zonedTimestampType = (ZonedTimestampType) logicalType;
-                serializeTimestamp(
-                        zonedTimestampType.getPrecision(),
-                        zonedTimestampType.getKind(),
-                        jsonGenerator,
-                        serializerProvider);
+                serializeTimestamp(zonedTimestampType.getPrecision(), jsonGenerator);
                 break;
             case TIMESTAMP_WITH_LOCAL_TIME_ZONE:
                 final LocalZonedTimestampType localZonedTimestampType =
                         (LocalZonedTimestampType) logicalType;
-                serializeTimestamp(
-                        localZonedTimestampType.getPrecision(),
-                        localZonedTimestampType.getKind(),
-                        jsonGenerator,
-                        serializerProvider);
+                serializeTimestamp(localZonedTimestampType.getPrecision(), jsonGenerator);
                 break;
             case ARRAY:
                 serializeCollection(
@@ -173,28 +143,18 @@ final class SqlGatewayLogicalTypeJsonSerializer extends JsonSerializer<LogicalTy
                         serializerProvider);
                 break;
             case MAP:
-                serializeMap(
-                        (MapType) logicalType,
-                        jsonGenerator,
-                        serializerProvider);
+                serializeMap((MapType) logicalType, jsonGenerator, serializerProvider);
                 break;
             case ROW:
-                serializeRow(
-                        (RowType) logicalType,
-                        jsonGenerator,
-                        serializerProvider);
+                serializeRow((RowType) logicalType, jsonGenerator, serializerProvider);
                 break;
             case DISTINCT_TYPE:
                 serializeDistinctType(
-                        (DistinctType) logicalType,
-                        jsonGenerator,
-                        serializerProvider);
+                        (DistinctType) logicalType, jsonGenerator, serializerProvider);
                 break;
             case STRUCTURED_TYPE:
                 serializeStructuredType(
-                        (StructuredType) logicalType,
-                        jsonGenerator,
-                        serializerProvider);
+                        (StructuredType) logicalType, jsonGenerator, serializerProvider);
                 break;
             case RAW:
                 if (logicalType instanceof RawType) {
@@ -214,53 +174,38 @@ final class SqlGatewayLogicalTypeJsonSerializer extends JsonSerializer<LogicalTy
         jsonGenerator.writeNumberField(FIELD_NAME_LENGTH, 0);
     }
 
-    private static void serializeTimestamp(
-            int precision,
-            TimestampKind kind,
-            JsonGenerator jsonGenerator,
-            SerializerProvider serializerProvider)
+    private static void serializeTimestamp(int precision, JsonGenerator jsonGenerator)
             throws IOException {
         jsonGenerator.writeNumberField(FIELD_NAME_PRECISION, precision);
-        serializerProvider.defaultSerializeField(FIELD_NAME_TIMESTAMP_KIND, kind, jsonGenerator);
     }
 
     private static void serializeCollection(
             LogicalType elementType,
             JsonGenerator jsonGenerator,
-            SerializerProvider serializerProvider
-            )
+            SerializerProvider serializerProvider)
             throws IOException {
         jsonGenerator.writeFieldName(FIELD_NAME_ELEMENT_TYPE);
         serializeInternal(elementType, jsonGenerator, serializerProvider);
     }
 
     private static void serializeMap(
-            MapType mapType,
-            JsonGenerator jsonGenerator,
-            SerializerProvider serializerProvider
-            )
+            MapType mapType, JsonGenerator jsonGenerator, SerializerProvider serializerProvider)
             throws IOException {
         jsonGenerator.writeFieldName(FIELD_NAME_KEY_TYPE);
-        serializeInternal(
-                mapType.getKeyType(), jsonGenerator, serializerProvider);
+        serializeInternal(mapType.getKeyType(), jsonGenerator, serializerProvider);
         jsonGenerator.writeFieldName(FIELD_NAME_VALUE_TYPE);
-        serializeInternal(
-                mapType.getValueType(), jsonGenerator, serializerProvider);
+        serializeInternal(mapType.getValueType(), jsonGenerator, serializerProvider);
     }
 
     private static void serializeRow(
-            RowType rowType,
-            JsonGenerator jsonGenerator,
-            SerializerProvider serializerProvider
-            )
+            RowType rowType, JsonGenerator jsonGenerator, SerializerProvider serializerProvider)
             throws IOException {
         jsonGenerator.writeArrayFieldStart(FIELD_NAME_FIELDS);
         for (RowType.RowField rowField : rowType.getFields()) {
             jsonGenerator.writeStartObject();
             jsonGenerator.writeStringField(FIELD_NAME_FIELD_NAME, rowField.getName());
             jsonGenerator.writeFieldName(FIELD_NAME_FIELD_TYPE);
-            serializeInternal(
-                    rowField.getType(), jsonGenerator, serializerProvider);
+            serializeInternal(rowField.getType(), jsonGenerator, serializerProvider);
             if (rowField.getDescription().isPresent()) {
                 jsonGenerator.writeStringField(
                         FIELD_NAME_FIELD_DESCRIPTION, rowField.getDescription().get());
@@ -273,8 +218,7 @@ final class SqlGatewayLogicalTypeJsonSerializer extends JsonSerializer<LogicalTy
     private static void serializeDistinctType(
             DistinctType distinctType,
             JsonGenerator jsonGenerator,
-            SerializerProvider serializerProvider
-            )
+            SerializerProvider serializerProvider)
             throws IOException {
         serializerProvider.defaultSerializeField(
                 FIELD_NAME_OBJECT_IDENTIFIER,
@@ -285,17 +229,13 @@ final class SqlGatewayLogicalTypeJsonSerializer extends JsonSerializer<LogicalTy
                     FIELD_NAME_FIELD_DESCRIPTION, distinctType.getDescription().get());
         }
         jsonGenerator.writeFieldName(FIELD_NAME_SOURCE_TYPE);
-        serializeInternal(
-                distinctType.getSourceType(),
-                jsonGenerator,
-                serializerProvider);
+        serializeInternal(distinctType.getSourceType(), jsonGenerator, serializerProvider);
     }
 
     private static void serializeStructuredType(
             StructuredType structuredType,
             JsonGenerator jsonGenerator,
-            SerializerProvider serializerProvider
-            )
+            SerializerProvider serializerProvider)
             throws IOException {
         if (structuredType.getObjectIdentifier().isPresent()) {
             serializerProvider.defaultSerializeField(
@@ -319,10 +259,7 @@ final class SqlGatewayLogicalTypeJsonSerializer extends JsonSerializer<LogicalTy
             jsonGenerator.writeStartObject();
             jsonGenerator.writeStringField(FIELD_NAME_ATTRIBUTE_NAME, attribute.getName());
             jsonGenerator.writeFieldName(FIELD_NAME_ATTRIBUTE_TYPE);
-            serializeInternal(
-                    attribute.getType(),
-                    jsonGenerator,
-                    serializerProvider);
+            serializeInternal(attribute.getType(), jsonGenerator, serializerProvider);
             if (attribute.getDescription().isPresent()) {
                 jsonGenerator.writeStringField(
                         FIELD_NAME_ATTRIBUTE_DESCRIPTION, attribute.getDescription().get());

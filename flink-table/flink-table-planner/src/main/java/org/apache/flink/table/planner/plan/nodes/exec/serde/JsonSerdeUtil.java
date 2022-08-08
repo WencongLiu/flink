@@ -244,7 +244,10 @@ public class JsonSerdeUtil {
         return Optional.empty();
     }
 
-    static Class<?> loadClass(String className, SerdeContext serdeContext, String explanation) {
+    public static Class<?> loadClass(
+            String className,
+            SerdeContext serdeContext,
+            String explanation) {
         try {
             return ExtractionUtils.classForName(className, true, serdeContext.getClassLoader());
         } catch (ClassNotFoundException e) {
