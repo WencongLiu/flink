@@ -57,20 +57,29 @@ import static org.apache.flink.util.Preconditions.checkState;
  * consume data from memory or disk.
  */
 public class HsResultPartition extends ResultPartition {
+
+    // Shuffle数据的后缀
     public static final String DATA_FILE_SUFFIX = ".hybrid.data";
 
+    // 文件数据的索引
     private final HsFileDataIndex dataIndex;
 
+    // 文件数据 Manager
     private final HsFileDataManager fileDataManager;
 
+    // 文件路径
     private final Path dataFilePath;
 
+    // networkBufferSize
     private final int networkBufferSize;
 
+    // 一个配置项
     private final HybridShuffleConfiguration hybridShuffleConfiguration;
 
+    // hasNotifiedEndOfUser
     private boolean hasNotifiedEndOfUserRecords;
 
+    // MemoryDataManager
     @Nullable private HsMemoryDataManager memoryDataManager;
 
     public HsResultPartition(
@@ -88,6 +97,7 @@ public class HsResultPartition extends ResultPartition {
             HybridShuffleConfiguration hybridShuffleConfiguration,
             @Nullable BufferCompressor bufferCompressor,
             SupplierWithException<BufferPool, IOException> bufferPoolFactory) {
+        // 其实这些都是通用的东西
         super(
                 owningTaskName,
                 partitionIndex,
@@ -97,19 +107,28 @@ public class HsResultPartition extends ResultPartition {
                 numTargetKeyGroups,
                 partitionManager,
                 bufferCompressor,
+                // 这个网络buffer pool 是network buffer pool
                 bufferPoolFactory);
+
         this.networkBufferSize = networkBufferSize;
+        // 这个索引是直接被创建出来的
+        // 可以看出来索引只需要感知有多少RSP
         this.dataIndex = new HsFileDataIndexImpl(numSubpartitions);
+        // 创建一个File
         this.dataFilePath = new File(dataFileBashPath + DATA_FILE_SUFFIX).toPath();
+        // 把HybridShuffle的配置项传过来了
         this.hybridShuffleConfiguration = hybridShuffleConfiguration;
+
         this.fileDataManager =
                 new HsFileDataManager(
+                        // readBufferPool 是独占堆外内存
                         readBufferPool,
                         readIOExecutor,
                         dataIndex,
                         dataFilePath,
                         HsSubpartitionFileReaderImpl.Factory.INSTANCE,
                         hybridShuffleConfiguration);
+
     }
 
     // Called by task thread.
@@ -151,11 +170,15 @@ public class HsResultPartition extends ResultPartition {
 
     @Override
     public void broadcastEvent(AbstractEvent event, boolean isPriorityEvent) throws IOException {
+
+        // Event => Buffer
+        // 增加两个引用
         Buffer buffer = EventSerializer.toBuffer(event, isPriorityEvent);
         try {
             ByteBuffer serializedEvent = buffer.getNioBufferReadable();
             broadcast(serializedEvent, buffer.getDataType());
         } finally {
+            // 给自己引用减一
             buffer.recycleBuffer();
         }
     }
@@ -167,6 +190,7 @@ public class HsResultPartition extends ResultPartition {
         }
     }
 
+    // 优先给memoryDataManager
     private void emit(ByteBuffer record, int targetSubpartition, Buffer.DataType dataType)
             throws IOException {
         checkInProduceState();
@@ -187,15 +211,13 @@ public class HsResultPartition extends ResultPartition {
         }
 
         HsSubpartitionView subpartitionView = new HsSubpartitionView(availabilityListener);
-        HsDataView diskDataView =
-                fileDataManager.registerNewSubpartition(subpartitionId, subpartitionView);
 
-        HsDataView memoryDataView =
-                checkNotNull(memoryDataManager)
-                        .registerSubpartitionView(subpartitionId, subpartitionView);
+        HsDataView diskDataView = fileDataManager.registerNewSubpartition(subpartitionId, subpartitionView);
+        HsDataView memoryDataView = checkNotNull(memoryDataManager).registerSubpartitionView(subpartitionId, subpartitionView);
 
         subpartitionView.setDiskDataView(diskDataView);
         subpartitionView.setMemoryDataView(memoryDataView);
+
         return subpartitionView;
     }
 
@@ -210,11 +232,13 @@ public class HsResultPartition extends ResultPartition {
     }
 
     @Override
+    // flush all 对所有RSP 进行 flush
     public void flushAll() {
         // Nothing to do.
     }
 
     @Override
+    // 对特定RSP 进行 flush
     public void flush(int subpartitionIndex) {
         // Nothing to do.
     }
@@ -254,12 +278,14 @@ public class HsResultPartition extends ResultPartition {
         return 0;
     }
 
+    // 队列中的Buffer数量 unsafe方式
     @Override
     public long getSizeOfQueuedBuffersUnsafe() {
         // Batch shuffle does not need to provide QueuedBuffers information
         return 0;
     }
 
+    // 队列中的buffer数量 safe方式
     @Override
     public int getNumberOfQueuedBuffers(int targetSubpartition) {
         // Batch shuffle does not need to provide QueuedBuffers information

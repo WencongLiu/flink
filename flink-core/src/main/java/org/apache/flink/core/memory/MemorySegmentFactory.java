@@ -34,6 +34,7 @@ import static org.apache.flink.util.Preconditions.checkArgument;
 @Internal
 public final class MemorySegmentFactory {
     private static final Logger LOG = LoggerFactory.getLogger(MemorySegmentFactory.class);
+    // 我靠 这里的NO_OP真的离谱
     private static final Runnable NO_OP = () -> {};
 
     /**
@@ -44,6 +45,7 @@ public final class MemorySegmentFactory {
      * @param buffer The heap memory region.
      * @return A new memory segment that targets the given heap memory region.
      */
+    // 将一个byte数组转为MS
     public static MemorySegment wrap(byte[] buffer) {
         return new MemorySegment(buffer, null);
     }
@@ -57,6 +59,7 @@ public final class MemorySegmentFactory {
      * @return A new memory segment that targets a copy of the given heap memory region.
      * @throws IllegalArgumentException if start > end or end > bytes.length
      */
+    // 复制已有的byte数组的内容到新的MS中去
     public static MemorySegment wrapCopy(byte[] bytes, int start, int end)
             throws IllegalArgumentException {
         checkArgument(end >= start);
@@ -71,6 +74,7 @@ public final class MemorySegmentFactory {
      *
      * @see ByteBuffer#putInt(int)
      */
+    // 分配一个整型数值对应的MS
     public static MemorySegment wrapInt(int value) {
         return wrap(ByteBuffer.allocate(Integer.BYTES).putInt(value).array());
     }
@@ -84,6 +88,7 @@ public final class MemorySegmentFactory {
      * @param size The size of the memory segment to allocate.
      * @return A new memory segment, backed by unpooled heap memory.
      */
+    // 分配一个指定大小的MS
     public static MemorySegment allocateUnpooledSegment(int size) {
         return allocateUnpooledSegment(size, null);
     }
@@ -98,6 +103,8 @@ public final class MemorySegmentFactory {
      * @param owner The owner to associate with the memory segment.
      * @return A new memory segment, backed by unpooled heap memory.
      */
+    // 分配一个指定大小的MS以及相应的owner
+    // 为什么是 非池化..
     public static MemorySegment allocateUnpooledSegment(int size, Object owner) {
         return new MemorySegment(new byte[size], owner);
     }
@@ -109,6 +116,7 @@ public final class MemorySegmentFactory {
      * @param size The size of the off-heap memory segment to allocate.
      * @return A new memory segment, backed by unpooled off-heap memory.
      */
+    // 分配一个堆外内存..
     public static MemorySegment allocateUnpooledOffHeapMemory(int size) {
         return allocateUnpooledOffHeapMemory(size, null);
     }
@@ -121,12 +129,14 @@ public final class MemorySegmentFactory {
      * @param owner The owner to associate with the off-heap memory segment.
      * @return A new memory segment, backed by unpooled off-heap memory.
      */
+    // Unpooled 依赖于 ByteBuffer.allocateDirect 进行直接内存的分配
     public static MemorySegment allocateUnpooledOffHeapMemory(int size, Object owner) {
         ByteBuffer memory = allocateDirectMemory(size);
         return new MemorySegment(memory, owner);
     }
 
     @VisibleForTesting
+    // Pooled 依赖于 Unsafe直接创建
     public static MemorySegment allocateOffHeapUnsafeMemory(int size) {
         return allocateOffHeapUnsafeMemory(size, null, NO_OP);
     }

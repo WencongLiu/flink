@@ -98,6 +98,7 @@ public class RecordWriterOutput<OUT> implements WatermarkGaugeExposingOutput<Str
         }
     }
 
+    // 是按照 Record 的级别，写入 Record 对应 的 大buffer
     private <X> void pushToRecordWriter(StreamRecord<X> record) {
         serializationDelegate.setInstance(record);
 

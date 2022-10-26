@@ -29,6 +29,8 @@ import java.util.concurrent.Callable;
  * e.g. synchronization in {@link org.apache.flink.streaming.runtime.tasks.SourceStreamTask
  * SourceStreamTask}.
  */
+
+// 定制化执行StreamTask内部逻辑 这是一个加锁的执行逻辑 基于这个Executor进行执行会同步且阻塞在一起
 @Internal
 public interface StreamTaskActionExecutor {
     void run(RunnableWithException runnable) throws Exception;

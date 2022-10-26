@@ -28,13 +28,16 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 /** A simple and efficient deserializer for the {@link java.io.DataInput} interface. */
+// 简单高效的反序列化器
 public class DataInputDeserializer implements DataInputView, java.io.Serializable {
 
+    // 这尼玛 整了一个空数组
     private static final byte[] EMPTY = new byte[0];
     private static final long serialVersionUID = 1L;
 
     // ------------------------------------------------------------------------
 
+    // 用来存储buffer吧
     private byte[] buffer;
 
     private int end;
@@ -43,10 +46,14 @@ public class DataInputDeserializer implements DataInputView, java.io.Serializabl
 
     // ------------------------------------------------------------------------
 
+    // 给buffer设置了一个初始值
     public DataInputDeserializer() {
         setBuffer(EMPTY);
     }
 
+    /***
+     * 基于堆内存进行初始化
+     */
     public DataInputDeserializer(@Nonnull byte[] buffer) {
         setBufferInternal(buffer, 0, buffer.length);
     }
@@ -55,6 +62,9 @@ public class DataInputDeserializer implements DataInputView, java.io.Serializabl
         setBuffer(buffer, start, len);
     }
 
+    /**
+     * 基于ByteBuffer进行初始化 有可能是堆外也有可能是堆内
+     */
     public DataInputDeserializer(@Nonnull ByteBuffer buffer) {
         setBuffer(buffer);
     }
@@ -62,6 +72,7 @@ public class DataInputDeserializer implements DataInputView, java.io.Serializabl
     // ------------------------------------------------------------------------
     //  Changing buffers
     // ------------------------------------------------------------------------
+
 
     public void setBuffer(@Nonnull ByteBuffer buffer) {
         if (buffer.hasArray()) {
@@ -127,6 +138,7 @@ public class DataInputDeserializer implements DataInputView, java.io.Serializabl
     }
 
     @Override
+    // 读出一个单独的byte
     public byte readByte() throws IOException {
         if (this.position < this.end) {
             return this.buffer[this.position++];
@@ -136,6 +148,7 @@ public class DataInputDeserializer implements DataInputView, java.io.Serializabl
     }
 
     @Override
+    // 读出一个单独的char
     public char readChar() throws IOException {
         if (this.position < this.end - 1) {
             return (char)
@@ -147,16 +160,19 @@ public class DataInputDeserializer implements DataInputView, java.io.Serializabl
     }
 
     @Override
+    // 读出一个单独的double类型
     public double readDouble() throws IOException {
         return Double.longBitsToDouble(readLong());
     }
 
     @Override
+    // 读出一个单独的float类型
     public float readFloat() throws IOException {
         return Float.intBitsToFloat(readInt());
     }
 
     @Override
+    // 把数据放到byte数组中去
     public void readFully(@Nonnull byte[] b) throws IOException {
         readFully(b, 0, b.length);
     }
@@ -247,6 +263,7 @@ public class DataInputDeserializer implements DataInputView, java.io.Serializabl
 
     @Nonnull
     @Override
+    // utf-8?
     public String readUTF() throws IOException {
         int utflen = readUnsignedShort();
         byte[] bytearr = new byte[utflen];
@@ -402,6 +419,7 @@ public class DataInputDeserializer implements DataInputView, java.io.Serializabl
     // ------------------------------------------------------------------------
 
     @SuppressWarnings("restriction")
+    // unsafe
     private static final sun.misc.Unsafe UNSAFE = MemoryUtils.UNSAFE;
 
     @SuppressWarnings("restriction")

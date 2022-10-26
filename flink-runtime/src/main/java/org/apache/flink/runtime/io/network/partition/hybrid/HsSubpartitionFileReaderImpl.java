@@ -51,6 +51,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  */
 public class HsSubpartitionFileReaderImpl implements HsSubpartitionFileReader {
 
+    // 头部Buffer是保留项
     private final ByteBuffer headerBuf;
 
     private final int subpartitionId;
@@ -73,6 +74,7 @@ public class HsSubpartitionFileReaderImpl implements HsSubpartitionFileReader {
             int subpartitionId,
             FileChannel dataFileChannel,
             HsSubpartitionViewInternalOperations operations,
+            // 把这个FileData的索引收入了
             HsFileDataIndex dataIndex,
             int maxBufferReadAhead,
             Consumer<HsSubpartitionFileReader> fileReaderReleaser,
@@ -120,7 +122,9 @@ public class HsSubpartitionFileReaderImpl implements HsSubpartitionFileReader {
         if (isFailed) {
             throw new IOException("subpartition reader has already failed.");
         }
+        // 第一个Buffer的序号
         int firstBufferToLoad = bufferIndexManager.getNextToLoad();
+
         if (firstBufferToLoad < 0) {
             return;
         }
@@ -129,10 +133,14 @@ public class HsSubpartitionFileReaderImpl implements HsSubpartitionFileReader {
         // 1) The target buffer has not been spilled into disk.
         // 2) The target buffer has not been released from memory.
         // So, just skip this round reading.
+
+        // Q: numRemainingBuffer 什么时候是 0
         int numRemainingBuffer = cachedRegionManager.getRemainingBuffersInRegion(firstBufferToLoad);
+
         if (numRemainingBuffer == 0) {
             return;
         }
+
         moveFileOffsetToBuffer(firstBufferToLoad);
 
         int indexToLoad;
@@ -140,6 +148,7 @@ public class HsSubpartitionFileReaderImpl implements HsSubpartitionFileReader {
         while (!buffers.isEmpty()
                 && (indexToLoad = bufferIndexManager.getNextToLoad()) >= 0
                 && numRemainingBuffer-- > 0) {
+
             MemorySegment segment = buffers.poll();
             Buffer buffer;
             try {
@@ -152,6 +161,8 @@ public class HsSubpartitionFileReaderImpl implements HsSubpartitionFileReader {
                 buffers.add(segment);
                 throw throwable;
             }
+
+            // 到这里为止就是 buffers 的 头一个 Segment 里面 已经数据了
 
             loadedBuffers.add(BufferIndexOrError.newBuffer(buffer, indexToLoad));
             bufferIndexManager.updateLastLoaded(indexToLoad);
@@ -359,8 +370,11 @@ public class HsSubpartitionFileReaderImpl implements HsSubpartitionFileReader {
 
         /** Returns a negative value if shouldn't load. */
         private int getNextToLoad() {
+            // nextToLoad就是下一个应当被loader的
             int nextToLoad = Math.max(lastLoaded, lastConsumed) + 1;
+            // 当前最多应该load哪个buffer
             int maxToLoad = lastConsumed + maxBuffersReadAhead;
+            // 给一个loader的bufferIndex吧
             return nextToLoad <= maxToLoad ? nextToLoad : -1;
         }
     }
@@ -397,11 +411,13 @@ public class HsSubpartitionFileReaderImpl implements HsSubpartitionFileReader {
         //  Called by HsSubpartitionFileReader
         // ------------------------------------------------------------------------
 
+        // 更新要读取的offset大小
         public void updateConsumingOffset(int consumingOffset) {
             this.consumingOffset = consumingOffset;
         }
 
         /** Return Long.MAX_VALUE if region does not exist to giving the lowest priority. */
+        // 获取该buffer的FileOffset
         private long getFileOffset(int bufferIndex) {
             updateCachedRegionIfNeeded(bufferIndex);
             return currentBufferIndex == -1 ? Long.MAX_VALUE : offset;
@@ -448,6 +464,7 @@ public class HsSubpartitionFileReaderImpl implements HsSubpartitionFileReader {
         /** Points the cursors to the given buffer index, if possible. */
         private void updateCachedRegionIfNeeded(int bufferIndex) {
             if (isInCachedRegion(bufferIndex)) {
+                // 当前cache住的内容一定是往前走的..
                 int numAdvance = bufferIndex - currentBufferIndex;
                 numSkip += numAdvance;
                 numReadable -= numAdvance;
@@ -471,6 +488,8 @@ public class HsSubpartitionFileReaderImpl implements HsSubpartitionFileReader {
             }
         }
 
+        // 假设 currentBufferIndex + numReadable
+        // 已经代表了当前的状态
         private boolean isInCachedRegion(int bufferIndex) {
             return bufferIndex < currentBufferIndex + numReadable
                     && bufferIndex >= currentBufferIndex;

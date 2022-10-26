@@ -26,6 +26,8 @@ import javax.annotation.Nonnull;
 import java.util.List;
 import java.util.Optional;
 
+
+// 邮箱工具 put操作可以是任意线程来执行，其余操作只能被单一线程来执行
 /**
  * A task mailbox provides read and write access to a mailbox and has a lifecycle of open ->
  * (quiesced) -> closed. Mails have a priority that can be used to retrieve only relevant letters.
@@ -68,6 +70,8 @@ import java.util.Optional;
  */
 @Internal
 public interface TaskMailbox {
+
+    // 为什么是mail的优先级..
     /**
      * The minimal priority for mails. The priority is used when no operator is associated with the
      * mail.
@@ -79,6 +83,7 @@ public interface TaskMailbox {
      */
     int MAX_PRIORITY = Integer.MAX_VALUE;
 
+    // 检查当前线程是否是mailbox线程
     /**
      * Check if the current thread is the mailbox thread.
      *
@@ -88,6 +93,7 @@ public interface TaskMailbox {
      */
     boolean isMailboxThread();
 
+
     /**
      * Returns <code>true</code> if the mailbox contains mail.
      *
@@ -95,6 +101,7 @@ public interface TaskMailbox {
      */
     boolean hasMail();
 
+    // 取走最早的邮件
     /**
      * Returns an optional with either the oldest mail from the mailbox (head of queue) if the
      * mailbox is not empty or an empty optional otherwise.
@@ -118,6 +125,7 @@ public interface TaskMailbox {
      * @throws IllegalStateException if mailbox is already closed.
      */
     @Nonnull
+    // 按照一直阻塞的行为 取走最早的邮件
     Mail take(int priority) throws InterruptedException;
 
     // --- Batch
@@ -138,6 +146,7 @@ public interface TaskMailbox {
      * @return true if there is at least one element in the batch; that is, if there is any mail at
      *     all at the time of the invocation.
      */
+    // 必须在 tryTakeFromBatch 前被调用
     boolean createBatch();
 
     /**
@@ -153,6 +162,7 @@ public interface TaskMailbox {
      *     is not empty or an empty optional otherwise.
      * @throws MailboxClosedException if mailbox is already closed.
      */
+    // 必须从一批batch中拿出mail进行处理
     Optional<Mail> tryTakeFromBatch();
 
     // --- Write methods
@@ -166,6 +176,7 @@ public interface TaskMailbox {
      * @param mail the mail to enqueue.
      * @throws MailboxClosedException if the mailbox is quiesced or closed.
      */
+    // 向邮箱内发送邮件
     void put(Mail mail);
 
     /**
@@ -176,21 +187,25 @@ public interface TaskMailbox {
      * @param mail the mail to enqueue.
      * @throws MailboxClosedException if the mailbox is quiesced or closed.
      */
+    // 向头部发送邮件
     void putFirst(Mail mail);
 
     // --- Lifecycle methods
 
     /** This enum represents the states of the mailbox lifecycle. */
+
+    // 状态 State
     enum State {
+
         OPEN(true),
         QUIESCED(false),
         CLOSED(false);
+
         private final boolean acceptingMails;
 
         State(boolean acceptingMails) {
             this.acceptingMails = acceptingMails;
         }
-
         public boolean isAcceptingMails() {
             return acceptingMails;
         }
@@ -201,12 +216,14 @@ public interface TaskMailbox {
      *
      * @return list with all mails that where enqueued in the mailbox.
      */
+    // 把MailBox中所有的邮件都取出来
     List<Mail> drain();
 
     /**
      * Quiesce the mailbox. In this state, the mailbox supports only take operations and all pending
      * and future put operations will throw {@link MailboxClosedException}.
      */
+    // 静默 就是只让消费了
     void quiesce();
 
     /**
@@ -216,6 +233,7 @@ public interface TaskMailbox {
      *
      * @return list with all mails that where enqueued in the mailbox at the time of closing.
      */
+    // 把Mail邮箱关闭了
     @Nonnull
     List<Mail> close();
 
@@ -224,6 +242,7 @@ public interface TaskMailbox {
      *
      * @return the current state of the mailbox.
      */
+    // 获取当前的状态
     @Nonnull
     State getState();
 
@@ -233,6 +252,7 @@ public interface TaskMailbox {
      *
      * @return number of mails in the mailbox.
      */
+    // 邮箱的大小
     int size();
 
     /**
@@ -244,6 +264,7 @@ public interface TaskMailbox {
      *
      * @param runnable the runnable to execute
      */
+    // 我其实不知道你这个邮箱里面是在干啥..
     void runExclusively(Runnable runnable);
 
     /** Exception thrown when {@link TaskMailbox} is closed. */

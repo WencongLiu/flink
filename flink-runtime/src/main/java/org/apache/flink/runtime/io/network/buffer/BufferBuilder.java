@@ -33,10 +33,15 @@ import static org.apache.flink.util.Preconditions.checkState;
  * data please use {@link BufferConsumer} which allows to build {@link Buffer} instances from the
  * written data.
  */
+
 @NotThreadSafe
 public class BufferBuilder implements AutoCloseable {
+
+    // 包裹了一个Buffer
     private final Buffer buffer;
+    // 包裹了一个MS 很奇怪.. 反正MS内 想 装多少数据就装多少数据
     private final MemorySegment memorySegment;
+    // 一个最大容量
     private int maxCapacity;
 
     private final SettablePositionMarker positionMarker = new SettablePositionMarker();
@@ -44,6 +49,7 @@ public class BufferBuilder implements AutoCloseable {
     private boolean bufferConsumerCreated = false;
 
     public BufferBuilder(MemorySegment memorySegment, BufferRecycler recycler) {
+        // 本质上是借助NetworkBuffer包裹了MS
         this.memorySegment = checkNotNull(memorySegment);
         this.buffer = new NetworkBuffer(memorySegment, recycler);
         this.maxCapacity = buffer.getMaxCapacity();
@@ -56,6 +62,7 @@ public class BufferBuilder implements AutoCloseable {
      *
      * @return created matching instance of {@link BufferConsumer} to this {@link BufferBuilder}.
      */
+    // 提供 读
     public BufferConsumer createBufferConsumer() {
         return createBufferConsumer(positionMarker.cachedPosition);
     }
@@ -66,15 +73,18 @@ public class BufferBuilder implements AutoCloseable {
      *
      * @return created matching instance of {@link BufferConsumer} to this {@link BufferBuilder}.
      */
+    // 提供从起点的读
     public BufferConsumer createBufferConsumerFromBeginning() {
         return createBufferConsumer(0);
     }
 
     private BufferConsumer createBufferConsumer(int currentReaderPosition) {
-        checkState(
-                !bufferConsumerCreated, "Two BufferConsumer shouldn't exist for one BufferBuilder");
+        // 一个 BufferBuilder 兼容一个 BufferConsumer
+        checkState(!bufferConsumerCreated, "Two BufferConsumer shouldn't exist for one BufferBuilder");
         bufferConsumerCreated = true;
+
         return new BufferConsumer(buffer.retainBuffer(), positionMarker, currentReaderPosition);
+
     }
 
     /** Same as {@link #append(ByteBuffer)} but additionally {@link #commit()} the appending. */

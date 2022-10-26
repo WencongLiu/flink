@@ -42,8 +42,8 @@ import static org.apache.flink.core.memory.MemoryUtils.getByteBufferAddress;
 /**
  * This class represents a piece of memory managed by Flink.
  *
- * <p>The memory can be on-heap, off-heap direct or off-heap unsafe. This is transparently handled
- * by this class.
+ * <p>The memory can be on-heap, off-heap direct or off-heap unsafe.
+ * This is transparently handled by this class. 这里怎么透明了 没看出来
  *
  * <p>This class fulfills conceptually a similar purpose as Java's {@link java.nio.ByteBuffer}. We
  * add this specialized class for various reasons:
@@ -88,6 +88,7 @@ public final class MemorySegment {
      * Constant that flags the byte order. Because this is a boolean constant, the JIT compiler can
      * use this well to aggressively eliminate the non-applicable code paths.
      */
+    // 关键是tmd 这也是写死了呀
     private static final boolean LITTLE_ENDIAN =
             (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN);
 
@@ -107,26 +108,32 @@ public final class MemorySegment {
      * The direct byte buffer that wraps the off-heap memory. This memory segment holds a reference
      * to that buffer, so as long as this memory segment lives, the memory will not be released.
      */
+    // 可以看出来 堆外内存被合并了
     @Nullable private ByteBuffer offHeapBuffer;
 
     /**
      * The address to the data, relative to the heap memory byte array. If the heap memory byte
      * array is <tt>null</tt>, this becomes an absolute memory address outside the heap.
      */
+    // 如果是堆内存 就是相对地址 如果是堆外内存 就是绝对地址
     private long address;
 
     /**
      * The address one byte after the last addressable byte, i.e. <tt>address + size</tt> while the
      * segment is not disposed.
      */
+    // 即可寻址地址的后一位
     private final long addressLimit;
 
     /** The size in bytes of the memory segment. */
+    // 内存段的大小 即以byte为单位
     private final int size;
 
     /** Optional owner of the memory segment. */
+    // memory segment的一个owner
     @Nullable private final Object owner;
 
+    // 这tm cleaner 是个什么鬼 看来也是一个单独的线程
     @Nullable private Runnable cleaner;
 
     /**
@@ -134,8 +141,9 @@ public final class MemorySegment {
      * released, without reference counting. Therefore, access from wrapped buffers, which may not
      * be aware of the releasing of memory, could be risky.
      */
+    // 允许包装的一个标记
     private final boolean allowWrap;
-
+    // 判断是不是free了
     private final AtomicBoolean isFreedAtomic;
 
     /**
@@ -153,10 +161,12 @@ public final class MemorySegment {
         this.heapMemory = buffer;
         this.offHeapBuffer = null;
         this.size = buffer.length;
+        // BYTE_ARRAY_BASE_OFFSET 目前是 数组对象的 对象头
         this.address = BYTE_ARRAY_BASE_OFFSET;
         this.addressLimit = this.address + this.size;
         this.owner = owner;
         this.allowWrap = true;
+        // 默认是没有cleaner的
         this.cleaner = null;
         this.isFreedAtomic = new AtomicBoolean(false);
     }
@@ -216,6 +226,7 @@ public final class MemorySegment {
      *
      * @return The size of the memory segment.
      */
+    // 有多少个Byte
     public int size() {
         return size;
     }
@@ -225,6 +236,8 @@ public final class MemorySegment {
      *
      * @return <tt>true</tt>, if the memory segment has been freed, <tt>false</tt> otherwise.
      */
+    //
+    // 如果访问到的地址超过了addressLimit ? 那么就认为内存被free了吧
     @VisibleForTesting
     public boolean isFreed() {
         return address > addressLimit;
@@ -241,13 +254,17 @@ public final class MemorySegment {
         if (isFreedAtomic.getAndSet(true)) {
             // the segment has already been freed
             if (checkMultipleFree) {
+                // 这尼玛感觉只是为了测试用的 如果检查了 就不行
                 throw new IllegalStateException("MemorySegment can be freed only once!");
             }
         } else {
             // this ensures we can place no more data and trigger
             // the checks for the freed segment
+            // 我擦 直接把address设置成一个不可逾越的值
             address = addressLimit + 1;
+            // 堆外内存 直接置为空 可以触发堆外内存的清空
             offHeapBuffer = null; // to enable GC of unsafe memory
+            // 堆上内存 基于cleaner 进行清除
             if (cleaner != null) {
                 cleaner.run();
                 cleaner = null;
@@ -271,6 +288,7 @@ public final class MemorySegment {
      * @return underlying byte array
      * @throws IllegalStateException if the memory segment does not represent on-heap memory
      */
+    // 只支持获取堆上内存对应的byte数组
     public byte[] getArray() {
         if (heapMemory != null) {
             return heapMemory;
@@ -285,6 +303,7 @@ public final class MemorySegment {
      * @return absolute memory address outside the heap
      * @throws IllegalStateException if the memory segment does not represent off-heap memory
      */
+    // 只支持获取堆外内存的address
     public long getAddress() {
         if (heapMemory == null) {
             return address;
@@ -314,9 +333,11 @@ public final class MemorySegment {
 
     private ByteBuffer wrapInternal(int offset, int length) {
         if (address <= addressLimit) {
+            // 如果是 堆上内存 直接包装成一个ByteBuffer
             if (heapMemory != null) {
                 return ByteBuffer.wrap(heapMemory, offset, length);
             } else {
+                //  如果是 堆外内存 也可以转化为一个 ByteBuffer
                 try {
                     ByteBuffer wrapper = Preconditions.checkNotNull(offHeapBuffer).duplicate();
                     wrapper.limit(offset + length);
@@ -337,6 +358,7 @@ public final class MemorySegment {
      * @return The owner of the memory segment, or null, if it does not have an owner.
      */
     @Nullable
+    // 获取归属者
     public Object getOwner() {
         return owner;
     }
@@ -364,6 +386,7 @@ public final class MemorySegment {
      * @throws IndexOutOfBoundsException Thrown, if the index is negative, or larger or equal to the
      *     size of the memory segment.
      */
+    // UNSAFE.getByte 堆内存和堆外内存都可以使用
     public byte get(int index) {
         final long pos = address + index;
         if (index >= 0 && pos < addressLimit) {
@@ -384,6 +407,7 @@ public final class MemorySegment {
      * @throws IndexOutOfBoundsException Thrown, if the index is negative, or larger or equal to the
      *     size of the memory segment.
      */
+    //
     public void put(int index, byte b) {
         final long pos = address + index;
         if (index >= 0 && pos < addressLimit) {
@@ -406,6 +430,7 @@ public final class MemorySegment {
      *     data between the index and the memory segment end is not enough to fill the destination
      *     array.
      */
+    // 把内存复制到dst数组内
     public void get(int index, byte[] dst) {
         get(index, dst, 0, dst.length);
     }
@@ -420,6 +445,7 @@ public final class MemorySegment {
      *     the array size exceed the amount of memory between the index and the memory segment's
      *     end.
      */
+    // 把src数组内的数据写入到内部
     public void put(int index, byte[] src) {
         put(index, src, 0, src.length);
     }
@@ -520,6 +546,7 @@ public final class MemorySegment {
      *     segment size minus 2.
      */
     @SuppressWarnings("restriction")
+    // 都是直接操作的堆内存
     public char getChar(int index) {
         final long pos = address + index;
         if (index >= 0 && pos <= addressLimit - 2) {
@@ -1238,7 +1265,7 @@ public final class MemorySegment {
     // -------------------------------------------------------------------------
     //                     Bulk Read and Write Methods
     // -------------------------------------------------------------------------
-
+    // 将数据读出来然后放进DataOutput中
     public void get(DataOutput out, int offset, int length) throws IOException {
         if (address <= addressLimit) {
             if (heapMemory != null) {

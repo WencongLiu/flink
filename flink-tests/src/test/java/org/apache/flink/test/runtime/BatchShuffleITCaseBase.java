@@ -52,35 +52,41 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /** Base class for batch shuffle related IT tests. */
 class BatchShuffleITCaseBase {
+
+    // record 内容
     private static final String RECORD = "batch shuffle test";
-
+    // TM数量
     private static final int NUM_TASK_MANAGERS = 2;
-
+    // 单TM Slot数量
     private static final int NUM_SLOTS_PER_TASK_MANAGER = 10;
-
+    // 并行度
     private static final int PARALLELISM = NUM_SLOTS_PER_TASK_MANAGER;
-
+    // 被接收的数据
     private static final int[] NUM_RECEIVED_RECORDS = new int[PARALLELISM];
-
+    // 路径
     private static Path tmpDir;
 
     @BeforeAll
     static void setup(@TempDir Path path) throws Exception {
+        // TempDirUtils.newFolder
+        // path + UUID.randomUUID().toString() 组合形成新的File 并对应一个Path
+        // 形成 初始路径
         tmpDir = TempDirUtils.newFolder(path, UUID.randomUUID().toString()).toPath();
     }
 
-    protected JobGraph createJobGraph(
-            int numRecordsToSend, boolean failExecution, Configuration configuration) {
+    // 被发送的Record数量 + 是否容错 + 配置 Configuration
+    protected JobGraph createJobGraph(int numRecordsToSend, boolean failExecution, Configuration configuration) {
         return createJobGraph(numRecordsToSend, failExecution, false, configuration);
     }
 
     protected JobGraph createJobGraph(
             int numRecordsToSend,
             boolean failExecution,
+            // 是否删除PartitionFile
             boolean deletePartitionFile,
             Configuration configuration) {
-        StreamExecutionEnvironment env =
-                StreamExecutionEnvironment.getExecutionEnvironment(configuration);
+        // 初始化Stream环境
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment(configuration);
         env.setRestartStrategy(RestartStrategies.fixedDelayRestart(10, 0L));
         env.setParallelism(NUM_SLOTS_PER_TASK_MANAGER);
 
@@ -92,6 +98,7 @@ class BatchShuffleITCaseBase {
                         true,
                         "source",
                         Boundedness.BOUNDED);
+
         source.rebalance()
                 .map(value -> value)
                 .shuffle()
@@ -99,9 +106,11 @@ class BatchShuffleITCaseBase {
 
         StreamGraph streamGraph = env.getStreamGraph();
         streamGraph.setJobType(JobType.BATCH);
+        // 根据作业直接生成JobGraph
         return StreamingJobGraphGenerator.createJobGraph(streamGraph);
     }
 
+    // 直接创建 Configuration
     protected Configuration getConfiguration() {
         Configuration configuration = new Configuration();
         configuration.set(CoreOptions.TMP_DIRS, tmpDir.toString());
@@ -110,10 +119,10 @@ class BatchShuffleITCaseBase {
         return configuration;
     }
 
+    // 根据 JobGraph Configuration numRecordsToSend 直接执行任务
     protected void executeJob(JobGraph jobGraph, Configuration configuration, int numRecordsToSend)
             throws Exception {
-        JobGraphRunningUtil.execute(
-                jobGraph, configuration, NUM_TASK_MANAGERS, NUM_SLOTS_PER_TASK_MANAGER);
+        JobGraphRunningUtil.execute(jobGraph, configuration, NUM_TASK_MANAGERS, NUM_SLOTS_PER_TASK_MANAGER);
         checkAllDataReceived(numRecordsToSend);
     }
 
@@ -155,9 +164,10 @@ class BatchShuffleITCaseBase {
 
         @Override
         public void open(Configuration parameters) throws Exception {
+
             NUM_RECEIVED_RECORDS[getRuntimeContext().getIndexOfThisSubtask()] = 0;
-            if (getRuntimeContext().getAttemptNumber() > 0
-                    || getRuntimeContext().getIndexOfThisSubtask() != 0) {
+
+            if (getRuntimeContext().getAttemptNumber() > 0 || getRuntimeContext().getIndexOfThisSubtask() != 0) {
                 return;
             }
 

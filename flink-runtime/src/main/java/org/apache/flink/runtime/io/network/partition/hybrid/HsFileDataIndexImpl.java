@@ -43,6 +43,8 @@ public class HsFileDataIndexImpl implements HsFileDataIndex {
 
     private final Object lock = new Object();
 
+    // 可以理解出 subpartitionFirstBufferIndexInternalRegions 代表了 RSP数量 的 region索引
+    // 每个map代表了 某个RSP内的所有region
     public HsFileDataIndexImpl(int numSubpartitions) {
         this.subpartitionFirstBufferIndexInternalRegions = new ArrayList<>(numSubpartitions);
         for (int subpartitionId = 0; subpartitionId < numSubpartitions; ++subpartitionId) {
@@ -50,19 +52,9 @@ public class HsFileDataIndexImpl implements HsFileDataIndex {
         }
     }
 
-    @Override
-    public Optional<ReadableRegion> getReadableRegion(
-            int subpartitionId, int bufferIndex, int consumingOffset) {
-        synchronized (lock) {
-            return getInternalRegion(subpartitionId, bufferIndex)
-                    .map(
-                            internalRegion ->
-                                    internalRegion.toReadableRegion(bufferIndex, consumingOffset))
-                    .filter(internalRegion -> internalRegion.numReadable > 0);
-        }
-    }
 
     @Override
+    // HsMDM 在release时调用
     public void addBuffers(List<SpilledBuffer> spilledBuffers) {
         final Map<Integer, List<InternalRegion>> subpartitionInternalRegions =
                 convertToInternalRegions(spilledBuffers);
@@ -78,7 +70,24 @@ public class HsFileDataIndexImpl implements HsFileDataIndex {
         }
     }
 
+
     @Override
+    // HsSubpartitionFileReaderImpl 在读取buffer时调用
+    // consumingOffset 当前消费的index
+    public Optional<ReadableRegion> getReadableRegion(int subpartitionId, int bufferIndex, int consumingOffset) {
+        synchronized (lock) {
+            return getInternalRegion(subpartitionId, bufferIndex)
+                    .map(
+                            internalRegion ->
+                                    internalRegion.toReadableRegion(bufferIndex, consumingOffset))
+                    .filter(internalRegion -> internalRegion.numReadable > 0);
+        }
+    }
+
+
+
+    @Override
+    // HsMDM 调用
     public void markBufferReleased(int subpartitionId, int bufferIndex) {
         synchronized (lock) {
             getInternalRegion(subpartitionId, bufferIndex)
@@ -87,6 +96,7 @@ public class HsFileDataIndexImpl implements HsFileDataIndex {
     }
 
     @GuardedBy("lock")
+    // 获取内部region
     private Optional<InternalRegion> getInternalRegion(int subpartitionId, int bufferIndex) {
         return Optional.ofNullable(
                         subpartitionFirstBufferIndexInternalRegions
@@ -170,9 +180,13 @@ public class HsFileDataIndexImpl implements HsFileDataIndex {
      * are in two separate regions.
      */
     private static class InternalRegion {
+        // 这个region内的第一个buffer的序号
         private final int firstBufferIndex;
+        // 它的实际文件offset
         private final long firstBufferOffset;
+        // 这个region内的buffer
         private final int numBuffers;
+        // 感觉这个release木有什么用
         private final boolean[] released;
 
         private InternalRegion(int firstBufferIndex, long firstBufferOffset, int numBuffers) {
@@ -189,8 +203,12 @@ public class HsFileDataIndexImpl implements HsFileDataIndex {
 
         private HsFileDataIndex.ReadableRegion toReadableRegion(
                 int bufferIndex, int consumingOffset) {
+            // consumingOffset代表当前消费到的序号
+            // 要在这个region内跳过几个buffer
             int nSkip = bufferIndex - firstBufferIndex;
+            // 有多少个read
             int nReadable = 0;
+
             while (nSkip + nReadable < numBuffers) {
                 if (!released[nSkip + nReadable] || (bufferIndex + nReadable) <= consumingOffset) {
                     break;

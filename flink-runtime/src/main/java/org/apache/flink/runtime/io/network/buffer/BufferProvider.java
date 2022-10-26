@@ -37,6 +37,7 @@ public interface BufferProvider extends AvailabilityProvider {
      * @return {@code null} if no buffer is available or the buffer provider has been destroyed.
      */
     @Nullable
+    // 暴露一个buffer
     Buffer requestBuffer();
 
     /**
@@ -46,6 +47,7 @@ public interface BufferProvider extends AvailabilityProvider {
      * @return {@code null} if no buffer is available or the buffer provider has been destroyed.
      */
     @Nullable
+    // 返回一个buffer builder
     BufferBuilder requestBufferBuilder();
 
     /**
@@ -55,6 +57,7 @@ public interface BufferProvider extends AvailabilityProvider {
      * @return {@code null} if no buffer is available or the buffer provider has been destroyed.
      */
     @Nullable
+    // 还要指定一个targetChannel
     BufferBuilder requestBufferBuilder(int targetChannel);
 
     /**
@@ -64,6 +67,7 @@ public interface BufferProvider extends AvailabilityProvider {
      * <p>If there is no buffer available, the call will block until one becomes available again or
      * the buffer provider has been destroyed.
      */
+    // 阻塞的方式获取BufferBuilder
     BufferBuilder requestBufferBuilderBlocking() throws InterruptedException;
 
     /**
@@ -74,6 +78,7 @@ public interface BufferProvider extends AvailabilityProvider {
      *
      * @param targetChannel to which the request will be accounted to.
      */
+    // 指定一个targerChannel 获取 Buffer
     BufferBuilder requestBufferBuilderBlocking(int targetChannel) throws InterruptedException;
 
     /**
@@ -82,9 +87,11 @@ public interface BufferProvider extends AvailabilityProvider {
      * <p>The operation fails with return value <code>false</code>, when there is a buffer available
      * or the buffer provider has been destroyed.
      */
+    // 增加一个BufferListener
     boolean addBufferListener(BufferListener listener);
 
     /** Returns whether the buffer provider has been destroyed. */
+    // 判断是否 Destroyed
     boolean isDestroyed();
 
     /**
@@ -94,6 +101,7 @@ public interface BufferProvider extends AvailabilityProvider {
      *     destroyed.
      */
     @Nullable
+    // 可能是一个空的MemorySegment
     MemorySegment requestMemorySegment();
 
     /**
@@ -102,5 +110,6 @@ public interface BufferProvider extends AvailabilityProvider {
      * <p>If there is no memory segment available, the call will block until one becomes available
      * again or the buffer provider has been destroyed.
      */
+    // 阻塞返回一个MemorySegment
     MemorySegment requestMemorySegmentBlocking() throws InterruptedException;
 }

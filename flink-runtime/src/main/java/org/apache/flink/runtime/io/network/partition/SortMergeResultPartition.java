@@ -105,6 +105,7 @@ public class SortMergeResultPartition extends ResultPartition {
 
     /**
      * A shared buffer pool to allocate buffers from when reading data from this result partition.
+     *  读出来的时候 还需要buffer
      */
     private final BatchShuffleReadBufferPool readBufferPool;
 
@@ -114,6 +115,7 @@ public class SortMergeResultPartition extends ResultPartition {
     private final SortMergeResultPartitionReadScheduler readScheduler;
 
     /** All available network buffers can be used by this result partition for a data region. */
+    // 为什么是一个data region的所有可用network buffer
     private final LinkedList<MemorySegment> freeSegments = new LinkedList<>();
 
     /**
@@ -129,9 +131,11 @@ public class SortMergeResultPartition extends ResultPartition {
     private boolean useHashBuffer;
 
     /** {@link DataBuffer} for records sent by {@link #broadcastRecord(ByteBuffer)}. */
+    // 用于 broadcastRecord 的 DataBuffer
     private DataBuffer broadcastDataBuffer;
 
     /** {@link DataBuffer} for records sent by {@link #emitRecord(ByteBuffer, int)}. */
+    // 用于 unicast 的 DataBuffer
     private DataBuffer unicastDataBuffer;
 
     public SortMergeResultPartition(
@@ -166,6 +170,7 @@ public class SortMergeResultPartition extends ResultPartition {
         // performance, when writing data to file, we use a random subpartition order to avoid
         // reading the output of all upstream tasks in the same order, which is better for data
         // input balance of the downstream tasks
+        // 随机写
         this.subpartitionOrder = getRandomSubpartitionOrder(numSubpartitions);
         this.readScheduler =
                 new SortMergeResultPartitionReadScheduler(readBufferPool, readIOExecutor, lock);
@@ -179,6 +184,7 @@ public class SortMergeResultPartition extends ResultPartition {
             }
             try {
                 // allocate at most 4M heap memory for caching of index entries
+                // 我靠..
                 fileWriter =
                         new PartitionedFileWriter(numSubpartitions, 4194304, resultFileBasePath);
             } catch (Throwable throwable) {
@@ -187,6 +193,7 @@ public class SortMergeResultPartition extends ResultPartition {
         }
 
         // initialize the buffer pool eagerly to avoid reporting errors such as OOM too late
+        // 上来就申请到这部分内存
         readBufferPool.initialize();
         LOG.info("Sort-merge partition {} initialized.", getPartitionId());
     }

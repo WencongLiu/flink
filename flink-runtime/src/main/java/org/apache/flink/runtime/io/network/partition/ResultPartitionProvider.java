@@ -24,6 +24,7 @@ import java.io.IOException;
 public interface ResultPartitionProvider {
 
     /** Returns the requested intermediate result partition input view. */
+    // 重点 这里是创建SubpartitionView的方法
     ResultSubpartitionView createSubpartitionView(
             ResultPartitionID partitionId,
             int index,

@@ -65,24 +65,30 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
 /** An input channel, which requests a remote partition queue. */
+
 public class RemoteInputChannel extends InputChannel {
+
     private static final Logger LOG = LoggerFactory.getLogger(RemoteInputChannel.class);
 
     private static final int NONE = -1;
 
     /** ID to distinguish this channel from other channels sharing the same TCP connection. */
+    // InputChannel自己也有一个ID 好乱啊
     private final InputChannelID id = new InputChannelID();
 
     /** The connection to use to request the remote partition. */
+    // ConnectID
     private final ConnectionID connectionId;
 
     /** The connection manager to use connect to the remote partition provider. */
+    // 持有一个CM
     private final ConnectionManager connectionManager;
 
     /**
      * The received buffers. Received buffers are enqueued by the network I/O thread and the queue
      * is consumed by the receiving task thread.
      */
+    // 储存SequenceBuffer 看着就头疼 为什么 这里tm的又定义了一种Buffer啊
     private final PrioritizedDeque<SequenceBuffer> receivedBuffers = new PrioritizedDeque<>();
 
     /**
@@ -92,17 +98,22 @@ public class RemoteInputChannel extends InputChannel {
     private final AtomicBoolean isReleased = new AtomicBoolean();
 
     /** Client to establish a (possibly shared) TCP connection and request the partition. */
+    // 引用一个PRC
     private volatile PartitionRequestClient partitionRequestClient;
 
     /** The next expected sequence number for the next buffer. */
+    // 这玩意是一直递增的吗
     private int expectedSequenceNumber = 0;
 
     /** The initial number of exclusive buffers assigned to this channel. */
+    // 初始信用值
     private final int initialCredit;
 
     /** The number of available buffers that have not been announced to the producer yet. */
+    // 最开始的信用值
     private final AtomicInteger unannouncedCredit = new AtomicInteger(0);
 
+    // 我靠 为什么还有一个BM呢
     private final BufferManager bufferManager;
 
     @GuardedBy("receivedBuffers")
@@ -111,8 +122,10 @@ public class RemoteInputChannel extends InputChannel {
     @GuardedBy("receivedBuffers")
     private long lastBarrierId = NONE;
 
+    // ChannelState 持久化器
     private final ChannelStatePersister channelStatePersister;
 
+    // 总的队列内的字节数
     private long totalQueueSizeInBytes;
 
     public RemoteInputChannel(
@@ -143,11 +156,15 @@ public class RemoteInputChannel extends InputChannel {
         this.initialCredit = networkBuffersPerChannel;
         this.connectionId = checkNotNull(connectionId);
         this.connectionManager = checkNotNull(connectionManager);
+
+        // 可以看到 一个RIC 持有一个专属的BM
         this.bufferManager = new BufferManager(inputGate.getMemorySegmentProvider(), this, 0);
+
         this.channelStatePersister = new ChannelStatePersister(stateWriter, getChannelInfo());
     }
 
     @VisibleForTesting
+    // 设置可预期的下一个Buffer的序列号
     void setExpectedSequenceNumber(int expectedSequenceNumber) {
         this.expectedSequenceNumber = expectedSequenceNumber;
     }
@@ -161,7 +178,7 @@ public class RemoteInputChannel extends InputChannel {
         checkState(
                 bufferManager.unsynchronizedGetAvailableExclusiveBuffers() == 0,
                 "Bug in input channel setup logic: exclusive buffers have already been set for this input channel.");
-
+        // 这个是真恶心 就是说这个Buffer是不受LBP约束的
         bufferManager.requestExclusiveBuffers(initialCredit);
     }
 
@@ -172,6 +189,8 @@ public class RemoteInputChannel extends InputChannel {
     /** Requests a remote subpartition. */
     @VisibleForTesting
     @Override
+    // 对外注册RSP
+    // 由SIG调用
     public void requestSubpartition() throws IOException, InterruptedException {
         if (partitionRequestClient == null) {
             LOG.debug(
@@ -182,6 +201,7 @@ public class RemoteInputChannel extends InputChannel {
                     channelStatePersister);
             // Create a client and request the partition
             try {
+                // 直接基于 CM 创建 PRC
                 partitionRequestClient =
                         connectionManager.createPartitionRequestClient(connectionId);
             } catch (IOException e) {
@@ -190,12 +210,14 @@ public class RemoteInputChannel extends InputChannel {
                 throw new PartitionConnectionException(partitionId, e);
             }
 
-            partitionRequestClient.requestSubpartition(
-                    partitionId, consumedSubpartitionIndex, this, 0);
+            // 基于PRC 请求 RSP
+            partitionRequestClient.requestSubpartition(partitionId, consumedSubpartitionIndex, this, 0);
+
         }
     }
 
     /** Retriggers a remote subpartition request. */
+    // 这个retriggger是真的没有看懂..
     void retriggerSubpartitionRequest() throws IOException {
         checkPartitionRequestQueueInitialized();
 
@@ -207,6 +229,8 @@ public class RemoteInputChannel extends InputChannel {
         }
     }
 
+    // 索求一个Buffer
+    // 这个就是 向 receivedBuffers 中拿数据 但是不会被卡住..
     @Override
     Optional<BufferAndAvailability> getNextBuffer() throws IOException {
         checkPartitionRequestQueueInitialized();
@@ -360,6 +384,7 @@ public class RemoteInputChannel extends InputChannel {
     }
 
     @VisibleForTesting
+    // 这个感觉好离谱 只用于测试
     public Buffer getNextReceivedBuffer() {
         final SequenceBuffer sequenceBuffer = receivedBuffers.poll();
         return sequenceBuffer != null ? sequenceBuffer.buffer : null;
@@ -382,6 +407,7 @@ public class RemoteInputChannel extends InputChannel {
     @Override
     public void notifyBufferAvailable(int numAvailableBuffers) throws IOException {
         if (numAvailableBuffers > 0 && unannouncedCredit.getAndAdd(numAvailableBuffers) == 0) {
+            // notify 并且 初始信用值是 0，才会去 notify上游
             notifyCreditAvailable();
         }
     }
@@ -406,6 +432,7 @@ public class RemoteInputChannel extends InputChannel {
     }
 
     @Override
+    // 向上游报告所有的Record都已经被处理了
     public void acknowledgeAllRecordsProcessed() throws IOException {
         checkState(!isReleased.get(), "Channel released.");
         checkPartitionRequestQueueInitialized();
@@ -420,6 +447,7 @@ public class RemoteInputChannel extends InputChannel {
             // transmit any data so the allocated floating buffers can not be recycled, as a result,
             // other channels may can't allocate new buffers for data transmission (an extreme case
             // is that we only have 1 floating buffer and 0 exclusive buffer)
+            // 如果 初始信用值 是 0，那么意味着 BM 最开始没有保底的Buffer，如果是一个Blocking的行为，那么就释放掉这个InputChannel 持有的专属buffer吧
             bufferManager.releaseFloatingBuffers();
         }
     }
@@ -518,7 +546,9 @@ public class RemoteInputChannel extends InputChannel {
      * Handles the input buffer. This method is taking over the ownership of the buffer and is fully
      * responsible for cleaning it up both on the happy path and in case of an error.
      */
+    // 一旦Netty接收到Buffer，就会调用 RemoteInputChannel中的onBuffer方法了
     public void onBuffer(Buffer buffer, int sequenceNumber, int backlog) throws IOException {
+
         boolean recycleBuffer = true;
 
         try {
@@ -526,12 +556,12 @@ public class RemoteInputChannel extends InputChannel {
                 onError(new BufferReorderingException(expectedSequenceNumber, sequenceNumber));
                 return;
             }
-
+            // 如果 buffer的类型是阻塞上游 那么
             if (buffer.getDataType().isBlockingUpstream()) {
                 onBlockingUpstream();
                 checkArgument(backlog == 0, "Illegal number of backlog: %s, should be 0.", backlog);
             }
-
+            // wasEmpty 用来判断 receivedBuffers 是不是 空
             final boolean wasEmpty;
             boolean firstPriorityEvent = false;
             synchronized (receivedBuffers) {
@@ -550,7 +580,7 @@ public class RemoteInputChannel extends InputChannel {
                 }
 
                 wasEmpty = receivedBuffers.isEmpty();
-
+                // 把Netty 的Buffer和SequenceNumber绑定到一起 ==> SequenceBuffer
                 SequenceBuffer sequenceBuffer = new SequenceBuffer(buffer, sequenceNumber);
                 DataType dataType = buffer.getDataType();
                 if (dataType.hasPriority()) {

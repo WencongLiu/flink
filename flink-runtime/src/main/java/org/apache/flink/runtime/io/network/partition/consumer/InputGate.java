@@ -75,13 +75,16 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  * will have an input gate attached to it. This will provide its input, which will consist of one
  * subpartition from each partition of the intermediate result.
  */
-public abstract class InputGate
-        implements PullingAsyncDataInput<BufferOrEvent>, AutoCloseable, ChannelStateHolder {
+public abstract class InputGate implements PullingAsyncDataInput<BufferOrEvent>, AutoCloseable, ChannelStateHolder {
 
+    // 两个可用性帮助者 看上去没什么用
     protected final AvailabilityHelper availabilityHelper = new AvailabilityHelper();
-
     protected final AvailabilityHelper priorityAvailabilityHelper = new AvailabilityHelper();
 
+    /**
+     * 这个方法暂时先跳过 应该就是取出来 Channel 然后做一些操作
+     * @param channelStateWriter
+     */
     @Override
     public void setChannelStateWriter(ChannelStateWriter channelStateWriter) {
         for (int index = 0, numChannels = getNumberOfInputChannels();
@@ -94,8 +97,10 @@ public abstract class InputGate
         }
     }
 
+    // 获取 这个inputGate 对应的 inputChannel 数量
     public abstract int getNumberOfInputChannels();
 
+    // 判断是否 finish
     public abstract boolean isFinished();
 
     /**
@@ -106,6 +111,8 @@ public abstract class InputGate
      *
      * @return {@code Optional.empty()} if {@link #isFinished()} returns true.
      */
+    //
+    // 阻塞式获取数据
     public abstract Optional<BufferOrEvent> getNext() throws IOException, InterruptedException;
 
     /**
@@ -117,8 +124,10 @@ public abstract class InputGate
      * @return {@code Optional.empty()} if there is no data to return or if {@link #isFinished()}
      *     returns true.
      */
+    // 非阻塞式获取数据
     public abstract Optional<BufferOrEvent> pollNext() throws IOException, InterruptedException;
 
+    // 这还可以反向sendTaskEvent的 佛了
     public abstract void sendTaskEvent(TaskEvent event) throws IOException;
 
     /**
@@ -126,35 +135,45 @@ public abstract class InputGate
      *     records available immediately, {@link #AVAILABLE} should be returned. Previously returned
      *     not completed futures should become completed once there are more records available.
      */
+    // 获取可用性future
+
+    /**
+     * 这几个应该放到一起..
+     */
     @Override
     public CompletableFuture<?> getAvailableFuture() {
         return availabilityHelper.getAvailableFuture();
-    }
-
-    public abstract void resumeConsumption(InputChannelInfo channelInfo) throws IOException;
-
-    public abstract void acknowledgeAllRecordsProcessed(InputChannelInfo channelInfo)
-            throws IOException;
-
-    /** Returns the channel of this gate. */
-    public abstract InputChannel getChannel(int channelIndex);
-
-    /** Returns the channel infos of this gate. */
-    public List<InputChannelInfo> getChannelInfos() {
-        return IntStream.range(0, getNumberOfInputChannels())
-                .mapToObj(index -> getChannel(index).getChannelInfo())
-                .collect(Collectors.toList());
     }
 
     /**
      * Notifies when a priority event has been enqueued. If this future is queried from task thread,
      * it is guaranteed that a priority event is available and retrieved through {@link #getNext()}.
      */
+
     public CompletableFuture<?> getPriorityEventAvailableFuture() {
         return priorityAvailabilityHelper.getAvailableFuture();
     }
 
+    // 还可以恢复消费
+    public abstract void resumeConsumption(InputChannelInfo channelInfo) throws IOException;
+
+    // 确认所有数据都被处理了
+    public abstract void acknowledgeAllRecordsProcessed(InputChannelInfo channelInfo) throws IOException;
+
+    /** Returns the channel of this gate. */
+    // 对外暴露 channelIndex 对应的 InputChannel
+    public abstract InputChannel getChannel(int channelIndex);
+
+    /** Returns the channel infos of this gate. */
+    // 获取所有 InputChannel 的 ChannelInfo
+    public List<InputChannelInfo> getChannelInfos() {
+        return IntStream.range(0, getNumberOfInputChannels())
+                .mapToObj(index -> getChannel(index).getChannelInfo())
+                .collect(Collectors.toList());
+    }
+
     /** Simple pojo for INPUT, DATA and moreAvailable. */
+    // 真的没看懂这个的需求是啥
     protected static class InputWithData<INPUT, DATA> {
         protected final INPUT input;
         protected final DATA data;
@@ -184,11 +203,15 @@ public abstract class InputGate
     }
 
     /** Setup gate, potentially heavy-weight, blocking operation comparing to just creation. */
+    // 启动设置
     public abstract void setup() throws IOException;
 
+    // 请求分区
     public abstract void requestPartitions() throws IOException;
 
+    // 获取状态的消费future
     public abstract CompletableFuture<Void> getStateConsumedFuture();
 
+    // 这个暂时没看懂
     public abstract void finishReadRecoveredState() throws IOException;
 }

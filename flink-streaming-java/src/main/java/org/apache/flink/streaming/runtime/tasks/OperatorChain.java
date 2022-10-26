@@ -87,6 +87,8 @@ import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
+// OperatorChain 中 最重要的是 数据怎么从 mainOperator 流转到 RecordWriterOutput，并进一步流转到 RW上的
+// 要知道 RW 是在 StreamTask 中被初始化的
 /**
  * The {@code OperatorChain} contains all operators that are executed as one chain within a single
  * {@link StreamTask}.
@@ -103,8 +105,10 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
 
     private static final Logger LOG = LoggerFactory.getLogger(OperatorChain.class);
 
+    // 我靠 一个 RecordWriterOutput 列表 实现了 Output接口
     protected final RecordWriterOutput<?>[] streamOutputs;
 
+    // WatermarkGaugeExposingOutput 同样也会实现 Output接口
     protected final WatermarkGaugeExposingOutput<StreamRecord<OUT>> mainOperatorOutput;
 
     /**
@@ -129,19 +133,19 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
      * traversed: first, second, main, ..., tail or in reversed order: tail, ..., main, second,
      * first
      */
+    //  StreamOperator 的 包裹器
     @Nullable protected final StreamOperatorWrapper<OUT, OP> mainOperatorWrapper;
-
     @Nullable protected final StreamOperatorWrapper<?, ?> firstOperatorWrapper;
     @Nullable protected final StreamOperatorWrapper<?, ?> tailOperatorWrapper;
-
+    // 我靠 怎么还有 ChainedSource
     protected final Map<StreamConfig.SourceInputConfig, ChainedSource> chainedSources;
-
+    // Operator 的 数量
     protected final int numOperators;
-
+    // OperatorEventDispatcherImpl 是啥..
     protected final OperatorEventDispatcherImpl operatorEventDispatcher;
-
+    // 没啥用
     protected final Closer closer = Closer.create();
-
+    // FinishedOnRestoreInput 这个看不出来是啥..
     protected final @Nullable FinishedOnRestoreInput finishedOnRestoreInput;
 
     protected boolean isClosed;
@@ -150,10 +154,17 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
             StreamTask<OUT, OP> containingTask,
             RecordWriterDelegate<SerializationDelegate<StreamRecord<OUT>>> recordWriterDelegate) {
 
+        // 这个看不出来是啥..
         this.operatorEventDispatcher =
                 new OperatorEventDispatcherImpl(
                         containingTask.getEnvironment().getUserCodeClassLoader().asClassLoader(),
                         containingTask.getEnvironment().getOperatorCoordinatorEventGateway());
+
+        // 基于StreamTask 获取
+        // 1. ClassLoader
+        // 2. StreamConfig
+        // 3. StreamOperatorFactory
+        // 4. chainedConfigs
 
         final ClassLoader userCodeClassloader = containingTask.getUserCodeClassLoader();
         final StreamConfig configuration = containingTask.getConfiguration();
@@ -167,17 +178,25 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
 
         // create the final output stream writers
         // we iterate through all the out edges from this job vertex and create a stream output
+        // 获取所有的 NonChainedOutput
         List<NonChainedOutput> outputsInOrder =
                 configuration.getVertexNonChainedOutputs(userCodeClassloader);
-        Map<IntermediateDataSetID, RecordWriterOutput<?>> recordWriterOutputs =
-                new HashMap<>(outputsInOrder.size());
+
+
+        // IntermediateDataSetID 和 RecordWriterOutput 一对一
+        // 意思就是一个JobVertex对应一个 RecordWriterOutput
+        Map<IntermediateDataSetID, RecordWriterOutput<?>> recordWriterOutputs = new HashMap<>(outputsInOrder.size());
+
+        // RWO 的 列表
         this.streamOutputs = new RecordWriterOutput<?>[outputsInOrder.size()];
+        // 为什么需要 finishedOnRestoreInput..
         this.finishedOnRestoreInput =
                 this.isTaskDeployedAsFinished()
                         ? new FinishedOnRestoreInput(
                                 streamOutputs, configuration.getInputs(userCodeClassloader).length)
                         : null;
 
+        // 从此以后..shut down again 再次关闭
         // from here on, we need to make sure that the output writers are shut down again on failure
         boolean success = false;
         try {
@@ -281,11 +300,14 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
         firstOperatorWrapper = linkOperatorWrappers(allOperatorWrappers);
     }
 
+    // 部署即完成..？
     public abstract boolean isTaskDeployedAsFinished();
 
+    // 暂时没看懂 为什么要 dispatchOperatorEvent
     public abstract void dispatchOperatorEvent(
             OperatorID operator, SerializedValue<OperatorEvent> event) throws FlinkException;
 
+    // 这个暂时也没看懂
     public abstract void prepareSnapshotPreBarrier(long checkpointId) throws Exception;
 
     /**
@@ -293,6 +315,7 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
      *
      * @param inputId the input ID starts from 1 which indicates the first input.
      */
+    // 关闭 inputID对应的算子
     public abstract void endInput(int inputId) throws Exception;
 
     /**
@@ -300,6 +323,7 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
      * {@link StreamOperator#close()} which happens <b>heads to tail</b> (see {@link
      * #finishOperators(StreamTaskActionExecutor, StopMode)}).
      */
+    // 恢复相关的
     public abstract void initializeStateAndOpenOperators(
             StreamTaskStateInitializer streamTaskStateInitializer) throws Exception;
 
@@ -308,15 +332,20 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
      * operator in the chain, contrary to {@link StreamOperator#open()} which happens <b>tail to
      * heads</b> (see {@link #initializeStateAndOpenOperators(StreamTaskStateInitializer)}).
      */
+    // 链式关闭 Operator
     public abstract void finishOperators(StreamTaskActionExecutor actionExecutor, StopMode stopMode)
             throws Exception;
 
+    // notifyCheckpoint 完成
     public abstract void notifyCheckpointComplete(long checkpointId) throws Exception;
 
+    // notifyCheckpoint 中止
     public abstract void notifyCheckpointAborted(long checkpointId) throws Exception;
 
+    // 将..归入 将..纳入
     public abstract void notifyCheckpointSubsumed(long checkpointId) throws Exception;
 
+    // 对state进行snapshot
     public abstract void snapshotState(
             Map<OperatorID, OperatorSnapshotFutures> operatorSnapshotsInProgress,
             CheckpointMetaData checkpointMetaData,
@@ -326,26 +355,31 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
             CheckpointStreamFactory storage)
             throws Exception;
 
+    // 这个Dispatcher什么作用也不是很清楚..
     public OperatorEventDispatcher getOperatorEventDispatcher() {
         return operatorEventDispatcher;
     }
 
+    // 我靠 OperatorCHain也可以直接 broadcastEvent
     public void broadcastEvent(AbstractEvent event) throws IOException {
         broadcastEvent(event, false);
     }
 
+    // 基于 RecordWriterOutput 来实现 广播
     public void broadcastEvent(AbstractEvent event, boolean isPriorityEvent) throws IOException {
         for (RecordWriterOutput<?> streamOutput : streamOutputs) {
             streamOutput.broadcastEvent(event, isPriorityEvent);
         }
     }
 
+    // 有timeout的情况下 对 Barrier 进行分配
     public void alignedBarrierTimeout(long checkpointId) throws IOException {
         for (RecordWriterOutput<?> streamOutput : streamOutputs) {
             streamOutput.alignedBarrierTimeout(checkpointId);
         }
     }
 
+    // 对Checkpoin 进行 abort
     public void abortCheckpoint(long checkpointId, CheckpointException cause) {
         for (RecordWriterOutput<?> streamOutput : streamOutputs) {
             streamOutput.abortCheckpoint(checkpointId, cause);
@@ -356,10 +390,12 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
      * Execute {@link StreamOperator#close()} of each operator in the chain of this {@link
      * StreamTask}. Closing happens from <b>tail to head</b> operator in the chain.
      */
+    // 这也没看出来啊
     public void closeAllOperators() throws Exception {
         isClosed = true;
     }
 
+    // 获取所有的RWO
     public RecordWriterOutput<?>[] getStreamOutputs() {
         return streamOutputs;
     }
@@ -510,7 +546,7 @@ public abstract class OperatorChain<OUT, OP extends StreamOperator<OUT>>
             Map<IntermediateDataSetID, RecordWriterOutput<?>> recordWriterOutputs) {
         for (int i = 0; i < outputsInOrder.size(); ++i) {
             NonChainedOutput output = outputsInOrder.get(i);
-
+            // 为每个输出边
             RecordWriterOutput<?> recordWriterOutput =
                     createStreamOutput(
                             recordWriterDelegate.getRecordWriter(i),

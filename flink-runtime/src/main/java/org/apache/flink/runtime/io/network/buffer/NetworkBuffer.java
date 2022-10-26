@@ -62,6 +62,7 @@ public class NetworkBuffer extends AbstractReferenceCountedByteBuf implements Bu
      * The current size of the buffer in the range from 0 (inclusive) to the size of the backing
      * {@link MemorySegment} (inclusive).
      */
+    // 这个应该是字节数
     private int currentSize;
 
     /** Whether the buffer is compressed or not. */
@@ -137,7 +138,6 @@ public class NetworkBuffer extends AbstractReferenceCountedByteBuf implements Bu
     @Override
     public MemorySegment getMemorySegment() {
         ensureAccessible();
-
         return memorySegment;
     }
 
@@ -180,6 +180,8 @@ public class NetworkBuffer extends AbstractReferenceCountedByteBuf implements Bu
     }
 
     @Override
+    // 撤销分配空间
+    // 在release的时候就会触发deallocate
     protected void deallocate() {
         recycler.recycle(memorySegment);
     }
@@ -549,37 +551,44 @@ public class NetworkBuffer extends AbstractReferenceCountedByteBuf implements Bu
     }
 
     @Override
+    // 获取Java的ByteBuffer
     public ByteBuffer getNioBufferReadable() {
         return nioBuffer();
     }
 
     @Override
+    // 获取Java的ByteBuffer
     public ByteBuffer getNioBuffer(int index, int length) {
         return nioBuffer(index, length);
     }
 
     @Override
+    // 获取Java的ByteBuffer
     public ByteBuffer nioBuffer(int index, int length) {
         checkIndex(index, length);
         return memorySegment.wrap(index, length).slice();
     }
 
     @Override
+    // 获取Java的ByteBuffer
     public ByteBuffer internalNioBuffer(int index, int length) {
         return nioBuffer(index, length);
     }
 
     @Override
+    // 我靠 这不就是 一个 ByteBuffer的数组吗
     public ByteBuffer[] nioBuffers(int index, int length) {
         return new ByteBuffer[] {nioBuffer(index, length)};
     }
 
     @Override
+    // 如果是非数组 就支持 hasArray
     public boolean hasArray() {
         return !memorySegment.isOffHeap();
     }
 
     @Override
+    // 支持直接获取 byte 数组
     public byte[] array() {
         ensureAccessible();
 
@@ -587,16 +596,19 @@ public class NetworkBuffer extends AbstractReferenceCountedByteBuf implements Bu
     }
 
     @Override
+    // 这个有点离谱 array 的偏移量..
     public int arrayOffset() {
         return 0;
     }
 
     @Override
+    // 是否有内存地址？
     public boolean hasMemoryAddress() {
         return memorySegment.isOffHeap();
     }
 
     @Override
+    // 获取MS的address
     public long memoryAddress() {
         return memorySegment.getAddress();
     }
@@ -625,6 +637,7 @@ public class NetworkBuffer extends AbstractReferenceCountedByteBuf implements Bu
     }
 
     @Override
+    // 将自己返回出去
     public ByteBuf asByteBuf() {
         return this;
     }

@@ -25,6 +25,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.UTFDataFormatException;
 
+// 一般情况下 InputView 都是读取字节数据 然后 生成类型化数据
 /**
  * The base class for all input views that are backed by multiple memory pages. This base class
  * contains all decoding methods to read data from a page and detect page boundary crossing. The
@@ -35,8 +36,7 @@ public abstract class AbstractPagedInputView implements DataInputView {
 
     private MemorySegment currentSegment;
 
-    protected final int
-            headerLength; // the number of bytes to skip at the beginning of each segment
+    protected final int headerLength; // the number of bytes to skip at the beginning of each segment
 
     private int positionInSegment; // the offset in the current segment
 
@@ -60,10 +60,12 @@ public abstract class AbstractPagedInputView implements DataInputView {
      * @param headerLength The number of bytes to skip at the beginning of each segment for the
      *     header. This length must be the same for all memory segments.
      */
+    // 初始化一个 MemorySegment
     protected AbstractPagedInputView(
             MemorySegment initialSegment, int initialLimit, int headerLength) {
         this.headerLength = headerLength;
         this.positionInSegment = headerLength;
+        // 我靠 这就不知道 seekInput 的作用了
         seekInput(initialSegment, headerLength, initialLimit);
     }
 
@@ -77,6 +79,7 @@ public abstract class AbstractPagedInputView implements DataInputView {
      * @param headerLength The number of bytes to skip at the beginning of each segment for the
      *     header.
      */
+    // 意思是初始化之后 必须调用 advance() 和 seekInput(MemorySegment, int, int)
     protected AbstractPagedInputView(int headerLength) {
         this.headerLength = headerLength;
     }
@@ -93,6 +96,7 @@ public abstract class AbstractPagedInputView implements DataInputView {
      *
      * @return The current memory segment.
      */
+    // 获取当前 内存段
     public MemorySegment getCurrentSegment() {
         return this.currentSegment;
     }

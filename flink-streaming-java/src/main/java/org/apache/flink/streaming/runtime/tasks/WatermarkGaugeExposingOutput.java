@@ -28,6 +28,11 @@ import java.io.Closeable;
  *
  * @param <T> The type of the elements that can be emitted.
  */
+
+// Output组件本质上就是为了将OperatorChain中的上下游算子相连
+// Collect 收集数据
+// Output 提供水印功能的拓展
+// WatermarkGaugeExposingOutput 提供获取 WatermarkGauge 的方法
 public interface WatermarkGaugeExposingOutput<T> extends Output<T>, Closeable {
     Gauge<Long> getWatermarkGauge();
 }

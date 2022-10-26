@@ -182,6 +182,10 @@ import static org.apache.flink.util.concurrent.FutureUtils.assertNoException;
  * @param <OUT>
  * @param <OP>
  */
+
+// StreamTask 的类型根据 HeadOperator 类型的不同，可以区分为单输入和双输入两个类型
+// ST中所有的操作都是被加锁的
+
 @Internal
 public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         implements TaskInvokable,
@@ -208,33 +212,42 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
      * StreamTaskActionExecutor.SynchronizedStreamTaskActionExecutor
      * SynchronizedStreamTaskActionExecutor} to provide lock to {@link SourceStreamTask}.
      */
+    // 出了Mailbox线程之外的其他操作 基于 StreamTaskActionExecutor 进行执行
     private final StreamTaskActionExecutor actionExecutor;
 
     /** The input processor. Initialized in {@link #init()} method. */
+    // StreamTask 处理器
     @Nullable protected StreamInputProcessor inputProcessor;
 
     /** the main operator that consumes the input streams of this task. */
+    // 这尼玛是个泛型
     protected OP mainOperator;
 
     /** The chain of operators executed by this task. */
+    // 为什么 operatorChain 单独拆分出来了
     protected OperatorChain<OUT, OP> operatorChain;
 
     /** The configuration of this streaming task. */
     protected final StreamConfig configuration;
 
     /** Our state backend. We use this to create a keyed state backend. */
+    // 核心入口 也就是 StateBackend
     protected final StateBackend stateBackend;
 
     /** Our checkpoint storage. We use this to create checkpoint streams. */
+    // CK 的存储
     protected final CheckpointStorage checkpointStorage;
 
+    // CK 协调器
     private final SubtaskCheckpointCoordinator subtaskCheckpointCoordinator;
+
 
     /**
      * The internal {@link TimerService} used to define the current processing time (default =
      * {@code System.currentTimeMillis()}) and register timers for tasks to be executed in the
      * future.
      */
+    // 内部即时 并为Task注册未来的 timer
     protected final TimerService timerService;
 
     /**
@@ -245,34 +258,38 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
 
     /** The currently active background materialization threads. */
     private final CloseableRegistry cancelables = new CloseableRegistry();
-
     private final AutoCloseableRegistry resourceCloser;
-
     private final StreamTaskAsyncExceptionHandler asyncExceptionHandler;
 
     /**
      * Flag to mark the task "in operation", in which case check needs to be initialized to true, so
      * that early cancel() before invoke() behaves correctly.
      */
+    // 为什么最开始要设置为True
     private volatile boolean isRunning;
 
     /** Flag to mark this task as canceled. */
+    // 标记被 cancel
     private volatile boolean canceled;
 
     /**
      * Flag to mark this task as failing, i.e. if an exception has occurred inside {@link
      * #invoke()}.
      */
+    // 标记是failed
     private volatile boolean failing;
 
     /** Flags indicating the finished method of all the operators are called. */
+    // 标记所有方法都已经被执行
     private boolean finishedOperators;
-
+    // 标记已经被关闭？
     private boolean closedOperators;
 
+    // 异步快照线程池
     /** Thread pool for async snapshot workers. */
     private final ExecutorService asyncOperationsThreadPool;
 
+    // 初始化了recordWriter
     protected final RecordWriterDelegate<SerializationDelegate<StreamRecord<OUT>>> recordWriter;
 
     protected final MailboxProcessor mailboxProcessor;
@@ -280,30 +297,28 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
     final MailboxExecutor mainMailboxExecutor;
 
     /** TODO it might be replaced by the global IO executor on TaskManager level future. */
+   // 这里又整了一个 channelIO 的 线程
     private final ExecutorService channelIOExecutor;
 
     // ========================================================
     //  Final  checkpoint / savepoint
     // ========================================================
+    // 一些 记录的状态
+    // TMD 一堆变量
     private Long syncSavepoint = null;
     private Long finalCheckpointMinId = null;
     private final CompletableFuture<Void> finalCheckpointCompleted = new CompletableFuture<>();
-
     private long latestReportCheckpointId = -1;
-
     private long latestAsyncCheckpointStartDelayNanos;
-
     private volatile boolean endOfDataReceived = false;
-
     private final long bufferDebloatPeriod;
-
     private final Environment environment;
-
     private final Object shouldInterruptOnCancelLock = new Object();
 
     @GuardedBy("shouldInterruptOnCancelLock")
     private boolean shouldInterruptOnCancel = true;
 
+    // 能够判断是否数据可用
     @Nullable private final AvailabilityProvider changelogWriterAvailabilityProvider;
 
     // ------------------------------------------------------------------------
@@ -404,7 +419,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
                     Executors.newSingleThreadExecutor(
                             new ExecutorThreadFactory("channel-state-unspilling"));
             resourceCloser.registerCloseable(channelIOExecutor::shutdown);
-
+            // 每个StreamTask 都有若干个 Record Writer, 每个 Record Writer 包含了 一个分区器 和 一个RPW
             this.recordWriter = createRecordWriterDelegate(configuration, environment);
             // Release the output resources. this method should never fail.
             resourceCloser.registerCloseable(this::releaseOutputResources);
@@ -497,6 +512,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         return new SystemProcessingTimeService(this::handleTimerException, timerThreadFactory);
     }
 
+    // 把ChannelStateWriter注入到Channel中去
     private void injectChannelStateWriterIntoChannels() {
         final Environment env = getEnvironment();
         final ChannelStateWriter channelStateWriter =
@@ -511,6 +527,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         }
     }
 
+    // 这估计是State的人做的
     private CompletableFuture<Void> prepareInputSnapshot(
             ChannelStateWriter channelStateWriter, long checkpointId) throws CheckpointException {
         if (inputProcessor == null) {
@@ -527,8 +544,10 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
     //  Life cycle methods for specific implementations
     // ------------------------------------------------------------------------
 
+    // 先进行 init
     protected abstract void init() throws Exception;
 
+    // 这是个空壳
     protected void cancelTask() throws Exception {}
 
     /**
@@ -540,6 +559,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
      * @throws Exception on any problems in the action.
      */
     protected void processInput(MailboxDefaultAction.Controller controller) throws Exception {
+        // processInput不知道是不是只处理一条数据..
         DataInputStatus status = inputProcessor.processInput();
         switch (status) {
             case MORE_AVAILABLE:
@@ -568,20 +588,24 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
                 mailboxProcessor.suspend();
                 return;
         }
-
+        // NOTHING_AVAILABLE 或者 MORE_AVAILABLE 但是出现了问题
         TaskIOMetricGroup ioMetrics = getEnvironment().getMetricGroup().getIOMetricGroup();
         PeriodTimer timer;
         CompletableFuture<?> resumeFuture;
+        // 进行收尾工作
         if (!recordWriter.isAvailable()) {
             timer = new GaugePeriodTimer(ioMetrics.getSoftBackPressuredTimePerSecond());
+            // 获取 RecordWriterDelegate 的 恢复future
             resumeFuture = recordWriter.getAvailableFuture();
         } else if (!inputProcessor.isAvailable()) {
             timer = new GaugePeriodTimer(ioMetrics.getIdleTimeMsPerSecond());
+            // 获取 inputProcesser 的 恢复future
             resumeFuture = inputProcessor.getAvailableFuture();
         } else if (changelogWriterAvailabilityProvider != null) {
             // currently, waiting for changelog availability is reported as busy
             // todo: add new metric (FLINK-24402)
             timer = null;
+            // 获取 恢复future
             resumeFuture = changelogWriterAvailabilityProvider.getAvailableFuture();
         } else {
             // data availability has changed in the meantime; retry immediately
@@ -597,10 +621,13 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         if (mode == StopMode.DRAIN) {
             advanceToEndOfEventTime();
         }
+        // 这个暂时还不清楚是怎么回事..应该是把OperatorChain顺序关闭把
         // finish all operators in a chain effect way
         operatorChain.finishOperators(actionExecutor, mode);
+
         this.finishedOperators = true;
 
+        // 让每个RPW 去 notifyEndOfData
         for (ResultPartitionWriter partitionWriter : getEnvironment().getAllWriters()) {
             partitionWriter.notifyEndOfData(mode);
         }
@@ -665,6 +692,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         }
     }
 
+    // 先执行restore然后再执行invoke
     @Override
     public final void restore() throws Exception {
         restoreInternal();
@@ -678,6 +706,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         closedOperators = false;
         LOG.debug("Initializing {}.", getName());
 
+        // 这一步很关键.. 把 RecordWriter放进去了..
         operatorChain =
                 getEnvironment().getTaskStateManager().isTaskDeployedAsFinished()
                         ? new FinishedOperatorChain<>(this, recordWriter)
@@ -693,6 +722,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         init();
 
         // save the work of reloading state, etc, if the task is already canceled
+        // 这tm也是绝了..
         ensureNotCanceled();
 
         // -------- Invoke --------
@@ -763,6 +793,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         }
     }
 
+    // restoreInternal 应当在 invoke 之前被调用
     @Override
     public final void invoke() throws Exception {
         // Allow invoking method 'invoke' without having to call 'restore' before it.
@@ -1577,10 +1608,10 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
     // ------------------------------------------------------------------------
 
     @VisibleForTesting
-    public static <OUT>
-            RecordWriterDelegate<SerializationDelegate<StreamRecord<OUT>>>
-                    createRecordWriterDelegate(
-                            StreamConfig configuration, Environment environment) {
+    // 其实意思就是说一个Task, 可能会有多个RW, 通过一个类型的对象进行封装
+    public static <OUT> RecordWriterDelegate<SerializationDelegate<StreamRecord<OUT>>>
+    createRecordWriterDelegate(StreamConfig configuration, Environment environment) {
+
         List<RecordWriter<SerializationDelegate<StreamRecord<OUT>>>> recordWrites =
                 createRecordWriters(configuration, environment);
         if (recordWrites.size() == 1) {
@@ -1595,21 +1626,28 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
     private static <OUT>
             List<RecordWriter<SerializationDelegate<StreamRecord<OUT>>>> createRecordWriters(
                     StreamConfig configuration, Environment environment) {
+        // 初始化一个列表 意思是有可能存在多个RW
         List<RecordWriter<SerializationDelegate<StreamRecord<OUT>>>> recordWriters =
                 new ArrayList<>();
+        // 获取没有被Chain的Output
         List<NonChainedOutput> outputsInOrder =
                 configuration.getVertexNonChainedOutputs(
                         environment.getUserCodeClassLoader().asClassLoader());
 
         int index = 0;
         for (NonChainedOutput streamOutput : outputsInOrder) {
+
+            // 对于每个没有被Chain的Output，都去创建对应的 RW
+
             recordWriters.add(
+
                     createRecordWriter(
                             streamOutput,
                             index++,
                             environment,
                             environment.getTaskInfo().getTaskNameWithSubtasks(),
                             streamOutput.getBufferTimeout()));
+
         }
         return recordWriters;
     }
@@ -1627,6 +1665,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
         // Clones the partition to avoid multiple stream edges sharing the same stream partitioner,
         // like the case of https://issues.apache.org/jira/browse/FLINK-14087.
         try {
+            // StreamPartitioner + ClassLoader 生成 数据分区器
             outputPartitioner =
                     InstantiationUtil.clone(
                             (StreamPartitioner<OUT>) streamOutput.getPartitioner(),
@@ -1643,6 +1682,8 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
 
         ResultPartitionWriter bufferWriter = environment.getWriter(outputIndex);
 
+        // TODO 现在已经获取到了 outputPartitioner 和 bufferWriter
+
         // we initialize the partitioner here with the number of key groups (aka max. parallelism)
         if (outputPartitioner instanceof ConfigurableStreamPartitioner) {
             int numKeyGroups = bufferWriter.getNumTargetKeyGroups();
@@ -1651,6 +1692,7 @@ public abstract class StreamTask<OUT, OP extends StreamOperator<OUT>>
             }
         }
 
+        // RW 集成了 RPW 和 分区器
         RecordWriter<SerializationDelegate<StreamRecord<OUT>>> output =
                 new RecordWriterBuilder<SerializationDelegate<StreamRecord<OUT>>>()
                         .setChannelSelector(outputPartitioner)

@@ -30,6 +30,7 @@ import java.util.Arrays;
 /** A simple and efficient serializer for the {@link java.io.DataOutput} interface. */
 public class DataOutputSerializer implements DataOutputView, MemorySegmentWritable {
 
+    // 用堆上的byte数组来存储序列化后的字节数据
     private byte[] buffer;
 
     private int position;
@@ -47,6 +48,7 @@ public class DataOutputSerializer implements DataOutputView, MemorySegmentWritab
         this.wrapper = ByteBuffer.wrap(buffer);
     }
 
+    // 整了一个ByteBuffer的包装器
     public ByteBuffer wrapAsByteBuffer() {
         this.wrapper.position(0);
         this.wrapper.limit(this.position);
@@ -103,6 +105,7 @@ public class DataOutputSerializer implements DataOutputView, MemorySegmentWritab
     // ----------------------------------------------------------------------------------------
 
     @Override
+    // 把 int型的数据 转为byte数组
     public void write(int b) throws IOException {
         if (this.position >= this.buffer.length) {
             resize(1);
@@ -128,6 +131,7 @@ public class DataOutputSerializer implements DataOutputView, MemorySegmentWritab
     }
 
     @Override
+    // MS类型的数据转为byte数组
     public void write(MemorySegment segment, int off, int len) throws IOException {
         if (len < 0 || off < 0 || off > segment.size() - len) {
             throw new IndexOutOfBoundsException(
@@ -141,6 +145,7 @@ public class DataOutputSerializer implements DataOutputView, MemorySegmentWritab
     }
 
     @Override
+    // Boolean类型的数据转为byte数组
     public void writeBoolean(boolean v) throws IOException {
         write(v ? 1 : 0);
     }
@@ -210,6 +215,7 @@ public class DataOutputSerializer implements DataOutputView, MemorySegmentWritab
         if (LITTLE_ENDIAN) {
             v = Integer.reverseBytes(v);
         }
+        // 其实也是相对路径，从相对路径下 写入数据
         UNSAFE.putInt(this.buffer, BASE_OFFSET + pos, v);
     }
 
@@ -236,6 +242,7 @@ public class DataOutputSerializer implements DataOutputView, MemorySegmentWritab
     }
 
     @Override
+    // 把 String 转为 byte 数组
     public void writeUTF(String str) throws IOException {
         int strlen = str.length();
         int utflen = 0;
@@ -330,6 +337,7 @@ public class DataOutputSerializer implements DataOutputView, MemorySegmentWritab
     }
 
     @Override
+    // skip
     public void skipBytesToWrite(int numBytes) throws IOException {
         if (buffer.length - this.position < numBytes) {
             throw new EOFException("Could not skip " + numBytes + " bytes.");

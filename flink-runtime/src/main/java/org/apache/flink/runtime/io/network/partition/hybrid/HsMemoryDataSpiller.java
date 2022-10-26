@@ -87,10 +87,19 @@ public class HsMemoryDataSpiller implements AutoCloseable {
     private void spill(
             List<BufferWithIdentity> toWrite,
             CompletableFuture<List<SpilledBuffer>> spilledFuture) {
+        // 目前Buffer持有的信息
+        // 1. Buffer
+        // 2. buffer在RSP的index
+        // 3. RSP ID
         try {
             List<SpilledBuffer> spilledBuffers = new ArrayList<>();
+
+            // 算出spilledBuffers里面的内容
+            // 并且计算出这次的Byte数量
             long expectedBytes = createSpilledBuffersAndGetTotalBytes(toWrite, spilledBuffers);
+
             // write all buffers to file
+            // 看来这个才是关键啊
             writeBuffers(toWrite, expectedBytes);
             // complete spill future when buffers are written to disk successfully.
             // note that the ownership of these buffers is transferred to the MemoryDataManager,
@@ -112,9 +121,13 @@ public class HsMemoryDataSpiller implements AutoCloseable {
     private long createSpilledBuffersAndGetTotalBytes(
             List<BufferWithIdentity> toWrite, List<SpilledBuffer> spilledBuffers) {
         long expectedBytes = 0;
+        // 遍历每个要被Spill的Buffer
         for (BufferWithIdentity bufferWithIdentity : toWrite) {
+
             Buffer buffer = bufferWithIdentity.getBuffer();
+            // 计算当前Buffer的大小
             int numBytes = buffer.readableBytes() + BufferReaderWriterUtil.HEADER_LENGTH;
+            // 得出这个Buffer对应磁盘的offset
             spilledBuffers.add(
                     new SpilledBuffer(
                             bufferWithIdentity.getChannelIndex(),
@@ -122,6 +135,7 @@ public class HsMemoryDataSpiller implements AutoCloseable {
                             totalBytesWritten + expectedBytes));
             expectedBytes += numBytes;
         }
+        // 得出spill的总byte数量
         return expectedBytes;
     }
 

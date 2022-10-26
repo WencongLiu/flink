@@ -28,6 +28,10 @@ import java.util.concurrent.Future;
  * An executable bound to a specific operator in the chain, such that it can be picked for
  * downstream mailbox.
  */
+
+// 这个Mail对应了一段执行逻辑
+
+
 @Internal
 public class Mail {
     /** The action to execute. */
@@ -37,9 +41,12 @@ public class Mail {
      * upstream mails from downstream processors to avoid live/deadlocks.
      */
     private final int priority;
+
     /** The description of the mail that is used for debugging and error-reporting. */
+    // mail的描述用语
     private final String descriptionFormat;
 
+    // mail中还对应了一串Object
     private final Object[] descriptionArgs;
 
     private final StreamTaskActionExecutor actionExecutor;

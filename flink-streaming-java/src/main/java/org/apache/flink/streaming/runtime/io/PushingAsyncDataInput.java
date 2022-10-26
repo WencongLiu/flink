@@ -46,6 +46,7 @@ public interface PushingAsyncDataInput<T> extends AvailabilityProvider {
      *
      * @param <T> The type encapsulated with the stream record.
      */
+    // 这里定义了 DataOutput类型
     interface DataOutput<T> {
 
         void emitRecord(StreamRecord<T> streamRecord) throws Exception;

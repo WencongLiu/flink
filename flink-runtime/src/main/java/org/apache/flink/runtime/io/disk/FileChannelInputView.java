@@ -37,6 +37,7 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  * from the underlying channel. The view can read data that has been written by a {@link
  * FileChannelOutputView}, or that was written in blocks in another fashion.
  */
+// 只需要不停地对外提供MemorySegment即可，具体逻辑由上层进行封装
 public class FileChannelInputView extends AbstractPagedInputView {
 
     private final BlockChannelReader<MemorySegment> reader;

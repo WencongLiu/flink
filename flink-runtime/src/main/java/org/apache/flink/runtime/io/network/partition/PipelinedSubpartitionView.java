@@ -27,14 +27,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /** View over a pipelined in-memory only subpartition. */
+
+
 public class PipelinedSubpartitionView implements ResultSubpartitionView {
 
     /** The subpartition this view belongs to. */
+    // 关联到某个Subpartition
     private final PipelinedSubpartition parent;
 
+    // 可以看到，BufferAvailabilityListener 的实现类 最终会关联给一个RSPV
     private final BufferAvailabilityListener availabilityListener;
 
     /** Flag indicating whether this view has been released. */
+    // 一个原子释放flag
     final AtomicBoolean isReleased;
 
     public PipelinedSubpartitionView(
@@ -51,11 +56,13 @@ public class PipelinedSubpartitionView implements ResultSubpartitionView {
     }
 
     @Override
+    // 会去notify
     public void notifyDataAvailable() {
         availabilityListener.notifyDataAvailable();
     }
 
     @Override
+    // 会去notifyPriorityEvent
     public void notifyPriorityEvent(int priorityBufferNumber) {
         availabilityListener.notifyPriorityEvent(priorityBufferNumber);
     }
@@ -85,11 +92,13 @@ public class PipelinedSubpartitionView implements ResultSubpartitionView {
     }
 
     @Override
+    // 感觉这个View啥也不干呀
     public AvailabilityWithBacklog getAvailabilityAndBacklog(int numCreditsAvailable) {
         return parent.getAvailabilityAndBacklog(numCreditsAvailable);
     }
 
     @Override
+    // 获取FailureCause
     public Throwable getFailureCause() {
         Throwable cause = parent.getFailureCause();
         if (cause != null) {
@@ -99,16 +108,19 @@ public class PipelinedSubpartitionView implements ResultSubpartitionView {
     }
 
     @Override
+    // 非锁获取队列中的buffer
     public int unsynchronizedGetNumberOfQueuedBuffers() {
         return parent.unsynchronizedGetNumberOfQueuedBuffers();
     }
 
     @Override
+    // 获取RSP
     public int getNumberOfQueuedBuffers() {
         return parent.getNumberOfQueuedBuffers();
     }
 
     @Override
+    // 触发新的BufferSize
     public void notifyNewBufferSize(int newBufferSize) {
         parent.bufferSize(newBufferSize);
     }

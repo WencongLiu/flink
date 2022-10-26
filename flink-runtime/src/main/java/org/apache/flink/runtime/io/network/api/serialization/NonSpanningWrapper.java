@@ -37,6 +37,7 @@ import static org.apache.flink.runtime.io.network.api.serialization.RecordDeseri
 import static org.apache.flink.runtime.io.network.api.serialization.SpillingAdaptiveSpanningRecordDeserializer.LENGTH_BYTES;
 import static org.apache.flink.runtime.io.network.buffer.Buffer.DataType.DATA_BUFFER;
 
+// 实现了反序列化接口
 final class NonSpanningWrapper implements DataInputView {
 
     private static final String BROKEN_SERIALIZATION_ERROR_MESSAGE =
@@ -45,6 +46,7 @@ final class NonSpanningWrapper implements DataInputView {
                     + "(Value or Writable), check their serialization methods. If you are using a "
                     + "Kryo-serialized type, check the corresponding Kryo serializer.";
 
+    // MS 代表的是 MemorySegment
     private MemorySegment segment;
 
     private int limit;
@@ -63,13 +65,14 @@ final class NonSpanningWrapper implements DataInputView {
         this.limit = 0;
         this.position = 0;
     }
-
+    // 可以接收MemorySegment进行初始化
     void initializeFromMemorySegment(MemorySegment seg, int position, int limit) {
         this.segment = seg;
         this.position = position;
         this.limit = limit;
     }
 
+    // 获取没有被消费的Segment 包装成一个迭代器进行返回
     CloseableIterator<Buffer> getUnconsumedSegment() {
         if (!hasRemaining()) {
             return CloseableIterator.empty();
@@ -79,6 +82,7 @@ final class NonSpanningWrapper implements DataInputView {
         return singleBufferIterator(segment);
     }
 
+    // 判断是否有残留
     boolean hasRemaining() {
         return remaining() > 0;
     }
@@ -88,11 +92,13 @@ final class NonSpanningWrapper implements DataInputView {
     // -------------------------------------------------------------------------------------------------------------
 
     @Override
+    //
     public final void readFully(byte[] b) {
         readFully(b, 0, b.length);
     }
 
     @Override
+    // 提供读出数据到 byte数组 中的方法
     public final void readFully(byte[] b, int off, int len) {
         if (off < 0 || len < 0 || off + len > b.length) {
             throw new IndexOutOfBoundsException();

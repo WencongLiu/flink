@@ -321,6 +321,7 @@ public final class PojoSerializer<T> extends TypeSerializer<T> {
     public void serialize(T value, DataOutputView target) throws IOException {
         int flags = 0;
         // handle null values
+        // 如果传过来的值是空的
         if (value == null) {
             flags |= IS_NULL;
             target.writeByte(flags);
@@ -330,6 +331,7 @@ public final class PojoSerializer<T> extends TypeSerializer<T> {
         Integer subclassTag = -1;
         Class<?> actualClass = value.getClass();
         TypeSerializer subclassSerializer = null;
+        // 如果不为当前Class类型 就是子类
         if (clazz != actualClass) {
             subclassTag = registeredClasses.get(actualClass);
             if (subclassTag != null) {
@@ -342,9 +344,10 @@ public final class PojoSerializer<T> extends TypeSerializer<T> {
         } else {
             flags |= NO_SUBCLASS;
         }
-
+        // 我靠 写了一个标记
         target.writeByte(flags);
 
+        // 把类名也给加上
         // if its a registered subclass, write the class tag id, otherwise write the full classname
         if ((flags & IS_SUBCLASS) != 0) {
             target.writeUTF(actualClass.getName());

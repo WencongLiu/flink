@@ -20,6 +20,7 @@ package org.apache.flink.streaming.runtime.tasks.mailbox;
 import org.apache.flink.annotation.Internal;
 
 /** Interface for the default action that is repeatedly invoked in the mailbox-loop. */
+// 在mailbox loop 中被循环往复重复调用..
 @Internal
 public interface MailboxDefaultAction {
 

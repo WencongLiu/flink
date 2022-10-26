@@ -33,6 +33,8 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
 
+
+// 注意 PipelinedRP 可以同时在流作业和批作业中使用
 /**
  * A result output of a task, pipelined (streamed) to the receivers.
  *
@@ -49,6 +51,9 @@ import static org.apache.flink.util.Preconditions.checkArgument;
  * {@link #onConsumedSubpartition(int)}) then the partition as a whole is disposed and all buffers
  * are freed.
  */
+
+// 围绕所有RSP的工作
+
 public class PipelinedResultPartition extends BufferWritingResultPartition
         implements CheckpointedResultPartition, ChannelStateHolder {
     private static final int PIPELINED_RESULT_PARTITION_ITSELF = -42;
@@ -96,6 +101,7 @@ public class PipelinedResultPartition extends BufferWritingResultPartition
      * results. Even if all consumers are released, partition can not be released until writer
      * releases the partition as well.
      */
+    // 统计所有的"user" 包括RP本身也是 numberOfUsers
     @GuardedBy("lock")
     private int numberOfUsers;
 
@@ -128,6 +134,7 @@ public class PipelinedResultPartition extends BufferWritingResultPartition
         this.numberOfUsers = subpartitions.length + 1;
     }
 
+    // 好像是 State
     @Override
     public void setChannelStateWriter(ChannelStateWriter channelStateWriter) {
         for (final ResultSubpartition subpartition : subpartitions) {

@@ -32,11 +32,15 @@ import org.apache.flink.runtime.minicluster.MiniClusterConfiguration;
 public class JobGraphRunningUtil {
 
     public static void execute(
+            // 1. jobGraph
             JobGraph jobGraph,
+            // 2. 外部配置
             Configuration configuration,
+            // TM num + Slot num
             int numTaskManagers,
             int numSlotsPerTaskManager)
             throws Exception {
+
         configuration.set(TaskManagerOptions.TOTAL_FLINK_MEMORY, MemorySize.parse("1g"));
 
         final MiniClusterConfiguration miniClusterConfiguration =

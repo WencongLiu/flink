@@ -40,8 +40,9 @@ public interface BufferListener {
      * @param buffer buffer that becomes available in buffer pool.
      * @return true if the buffer is accepted by the listener.
      */
+    // 外部可以通知 BufferManager， 现在有Buffer了
     boolean notifyBufferAvailable(Buffer buffer);
 
-    /** Notification callback if the buffer provider is destroyed. */
+    // 外部可以通知Buffer被Destroy
     void notifyBufferDestroyed();
 }

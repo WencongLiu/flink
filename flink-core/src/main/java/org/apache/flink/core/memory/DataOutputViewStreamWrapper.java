@@ -55,7 +55,9 @@ public class DataOutputViewStreamWrapper extends DataOutputStream implements Dat
 
         while (numBytes > 0) {
             int toCopy = Math.min(numBytes, tempBuffer.length);
+            // 把temp buffer中的数据输入到 InputView 中
             source.readFully(tempBuffer, 0, toCopy);
+            // 然后 把 DataOutputStream 中的数据放到 tempBuffer 中
             write(tempBuffer, 0, toCopy);
             numBytes -= toCopy;
         }

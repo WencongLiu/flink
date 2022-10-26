@@ -50,11 +50,17 @@ import static org.apache.flink.util.Preconditions.checkState;
 public abstract class AbstractStreamTaskNetworkInput<
                 T, R extends RecordDeserializer<DeserializationDelegate<StreamElement>>>
         implements StreamTaskInput<T> {
+
+
     protected final CheckpointedInputGate checkpointedInputGate;
     protected final DeserializationDelegate<StreamElement> deserializationDelegate;
     protected final TypeSerializer<T> inputSerializer;
+
+    // 这个可以看出来 每个InputChannelInfo 对应一个反序列化器
     protected final Map<InputChannelInfo, R> recordDeserializers;
+    // 被展开的ChannelInfo目录
     protected final Map<InputChannelInfo, Integer> flattenedChannelIndices = new HashMap<>();
+
     /** Valve that controls how watermarks and watermark statuses are forwarded. */
     protected final StatusWatermarkValve statusWatermarkValve;
 
@@ -69,13 +75,15 @@ public abstract class AbstractStreamTaskNetworkInput<
             int inputIndex,
             Map<InputChannelInfo, R> recordDeserializers) {
         super();
+        // 接受一个Gate
         this.checkpointedInputGate = checkpointedInputGate;
-        deserializationDelegate =
-                new NonReusingDeserializationDelegate<>(
-                        new StreamElementSerializer<>(inputSerializer));
+        // 一个反序列化器
+        deserializationDelegate = new NonReusingDeserializationDelegate<>(new StreamElementSerializer<>(inputSerializer));
+
         this.inputSerializer = inputSerializer;
 
         for (InputChannelInfo i : checkpointedInputGate.getChannelInfos()) {
+            // 顺序记录IC的位置
             flattenedChannelIndices.put(i, flattenedChannelIndices.size());
         }
 
@@ -88,10 +96,15 @@ public abstract class AbstractStreamTaskNetworkInput<
     public DataInputStatus emitNext(DataOutput<T> output) throws Exception {
 
         while (true) {
-            // get the stream element from the deserializer
+            // 第二次进入函数 反序列化器 currentRecordDeserializer 不为空
             if (currentRecordDeserializer != null) {
+
+                // 反序列化结果标签 DeserializationResult
                 RecordDeserializer.DeserializationResult result;
+
                 try {
+                    // 随着 不断有 buffer被 放入 currentRecordDeserializer中，然后借助
+                    // deserializationDelegate 将 buffer 转为 StreamElement
                     result = currentRecordDeserializer.getNextRecord(deserializationDelegate);
                 } catch (IOException e) {
                     throw new IOException(
@@ -102,22 +115,43 @@ public abstract class AbstractStreamTaskNetworkInput<
                 }
 
                 if (result.isFullRecord()) {
+                    /**
+                     * =============== 代码边界 =================
+                     *     processElement(deserializationDelegate.getInstance(), output);
+                     *     是处理 StreamElement
+                     *     注意：这个函数被执行完，那么这条结果已经被下发到RP
+                     * =============== 代码边界 =================
+                     */
                     processElement(deserializationDelegate.getInstance(), output);
                     return DataInputStatus.MORE_AVAILABLE;
                 }
             }
-
+            // 第一次进入函数 反序列化器 currentRecordDeserializer 是空的
+            /**
+             * =============== 代码边界 =================
+             *     checkpointedInputGate.pollNext() 是从网络中读取数据
+             *     注意 这条数据并没有被当前的StreamTask处理！
+             * =============== 代码边界 =================
+             */
             Optional<BufferOrEvent> bufferOrEvent = checkpointedInputGate.pollNext();
+            // 需要从 checkpointedInputGate 中读取出 bufferOrEvent
             if (bufferOrEvent.isPresent()) {
                 // return to the mailbox after receiving a checkpoint barrier to avoid processing of
                 // data after the barrier before checkpoint is performed for unaligned checkpoint
                 // mode
+                // 如果 bufferOrEvent 是 buffer，那么就把 buffer 放到 currentRecordDeserializer 中
                 if (bufferOrEvent.get().isBuffer()) {
                     processBuffer(bufferOrEvent.get());
                 } else {
+                // 如果 bufferOrEvent 是 event，那么就直接返回处理状态吧
                     return processEvent(bufferOrEvent.get());
                 }
             } else {
+                // 如果 bufferOrEvent 是 空的，说明有两种可能：
+                // 1.inputGate已经finish了
+                // ----> 直接返回 END_OF_INPUT
+                // 2.inputGate没有读出来数据
+                // ----> 直接返回 NOTHING_AVAILABLE
                 if (checkpointedInputGate.isFinished()) {
                     checkState(
                             checkpointedInputGate.getAvailableFuture().isDone(),
@@ -130,14 +164,29 @@ public abstract class AbstractStreamTaskNetworkInput<
     }
 
     private void processElement(StreamElement recordOrMark, DataOutput<T> output) throws Exception {
+        /**
+         * 目前获取到了 StreamElement 以及 DataOutput
+         * 应当借助 DataOutput 完成 StreamElement 的输出
+         */
         if (recordOrMark.isRecord()) {
+            // 如果是Record
+            // 那么就调用 output.emitRecord
+            // 在这里是真正的把数据发送给DataOutput
+            // 但是在DataOutput这个层级并没有真正接触到RW..
+            // 只是发送给了 OperatorChain的头节点 这一点可以再深入看一下，点进去吧
             output.emitRecord(recordOrMark.asRecord());
         } else if (recordOrMark.isWatermark()) {
+            // 如果是Watermark
+            // 那么就调用 statusWatermarkValve.inputWatermark
             statusWatermarkValve.inputWatermark(
                     recordOrMark.asWatermark(), flattenedChannelIndices.get(lastChannel), output);
         } else if (recordOrMark.isLatencyMarker()) {
+            // 如果是LatencyMarker
+            // 那么就调用 output.emitLatencyMarker
             output.emitLatencyMarker(recordOrMark.asLatencyMarker());
         } else if (recordOrMark.isWatermarkStatus()) {
+            // 如果是WatermarkStatus
+            // 那么就调用 statusWatermarkValve.inputWatermarkStatus
             statusWatermarkValve.inputWatermarkStatus(
                     recordOrMark.asWatermarkStatus(),
                     flattenedChannelIndices.get(lastChannel),

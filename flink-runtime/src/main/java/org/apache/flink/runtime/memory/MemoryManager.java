@@ -57,6 +57,7 @@ import static org.apache.flink.core.memory.MemorySegmentFactory.allocateOffHeapU
  * MemorySegment}). Releasing a memory segment will make it re-claimable by the garbage collector,
  * but does not necessarily immediately releases the underlying memory.
  */
+
 public class MemoryManager {
 
     private static final Logger LOG = LoggerFactory.getLogger(MemoryManager.class);
@@ -69,6 +70,7 @@ public class MemoryManager {
     // ------------------------------------------------------------------------
 
     /** Memory segments allocated per memory owner. */
+    // 每个Owner持有自己的MemorySegments
     private final Map<Object, Set<MemorySegment>> allocatedSegments;
 
     /** Reserved memory per memory owner. */
@@ -99,7 +101,9 @@ public class MemoryManager {
         this.totalNumberOfPages = memorySize / pageSize;
         this.allocatedSegments = new ConcurrentHashMap<>();
         this.reservedMemory = new ConcurrentHashMap<>();
+        // shared resources
         this.sharedResources = new SharedResources();
+        // totalNumberOfPages 不能超过 Integer.MAX_VALUE
         verifyIntTotalNumberOfPages(memorySize, totalNumberOfPages);
 
         LOG.debug(
@@ -108,6 +112,7 @@ public class MemoryManager {
                 pageSize);
     }
 
+    // 荔枝一点
     private static void sanityCheck(long memorySize, int pageSize) {
         Preconditions.checkArgument(memorySize >= 0L, "Size of total memory must be non-negative.");
         Preconditions.checkArgument(
@@ -141,6 +146,7 @@ public class MemoryManager {
         if (!isShutDown) {
             // mark as shutdown and release memory
             isShutDown = true;
+            // 直接把 reserved memory 清空 也可以直接设置为 null 吧
             reservedMemory.clear();
 
             // go over all allocated segments and release them
@@ -150,6 +156,7 @@ public class MemoryManager {
                 }
                 segments.clear();
             }
+            // 可以考虑依赖GC
             allocatedSegments.clear();
         }
     }
@@ -242,6 +249,7 @@ public class MemoryManager {
                                     : currentSegmentsForOwner;
                     for (long i = numberOfPages; i > 0; i--) {
                         MemorySegment segment =
+                                // 这是最重点的哈
                                 allocateOffHeapUnsafeMemory(getPageSize(), owner, pageCleanup);
                         target.add(segment);
                         segmentsForOwner.add(segment);
@@ -252,6 +260,7 @@ public class MemoryManager {
         Preconditions.checkState(!isShutDown, "Memory manager has been concurrently shut down.");
     }
 
+    // 我尼玛 提供一个回调给 MemorySegmentFactory
     private void releasePage() {
         memoryBudget.releaseMemory(getPageSize());
     }
@@ -266,6 +275,7 @@ public class MemoryManager {
      *
      * @param segment The segment to be released.
      */
+    // MemoryManager也太强了吧 直接对一个MS进行释放，这tm，万一人家正在用着呢，现在突然不能访问了
     public void release(MemorySegment segment) {
         Preconditions.checkState(!isShutDown, "Memory manager has been shut down.");
 
@@ -335,6 +345,7 @@ public class MemoryManager {
         } while (!successfullyReleased);
     }
 
+    // 这个方法怎么这么sao
     private MemorySegment releaseSegmentsForOwnerUntilNextOwner(
             MemorySegment firstSeg, Iterator<MemorySegment> segmentsIterator) {
         AtomicReference<MemorySegment> nextOwnerMemorySegment = new AtomicReference<>();
@@ -365,7 +376,6 @@ public class MemoryManager {
                 });
         return nextOwnerMemorySegment.get();
     }
-
     private static void freeSegment(
             MemorySegment segment, @Nonnull Collection<MemorySegment> segments) {
         if (segments.remove(segment)) {
@@ -409,6 +419,7 @@ public class MemoryManager {
      * @throws MemoryReservationException Thrown, if this memory manager does not have the requested
      *     amount of memory any more.
      */
+    // 为某个owner保留一定量的内存
     public void reserveMemory(Object owner, long size) throws MemoryReservationException {
         checkMemoryReservationPreconditions(owner, size);
         if (size == 0L) {

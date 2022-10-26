@@ -32,5 +32,6 @@ public interface BufferAvailabilityListener {
      *
      * @param prioritySequenceNumber the sequence number that identifies the priority buffer.
      */
+    // 优先级..？ 这个没感觉出来有啥用
     default void notifyPriorityEvent(int prioritySequenceNumber) {}
 }

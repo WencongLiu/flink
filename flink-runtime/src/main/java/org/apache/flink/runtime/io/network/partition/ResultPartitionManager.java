@@ -29,17 +29,19 @@ import java.util.Map;
 import static org.apache.flink.util.Preconditions.checkState;
 
 /**
+ * RPM 在整个TM进程里 是共享的
  * The result partition manager keeps track of all currently produced/consumed partitions of a task
  * manager.
  */
 public class ResultPartitionManager implements ResultPartitionProvider {
 
     private static final Logger LOG = LoggerFactory.getLogger(ResultPartitionManager.class);
-
+    // 提供一个map来记忆
     private final Map<ResultPartitionID, ResultPartition> registeredPartitions = new HashMap<>(16);
 
     private boolean isShutdown;
 
+    // 基于一个RPID:RP 记录所有的RP
     public void registerResultPartition(ResultPartition partition) {
         synchronized (registeredPartitions) {
             checkState(!isShutdown, "Result partition manager already shut down.");
@@ -56,10 +58,17 @@ public class ResultPartitionManager implements ResultPartitionProvider {
     }
 
     @Override
+    // 基于RP和RSP的index创建一个RSP的view
+    // 本质上还是RSP的view
     public ResultSubpartitionView createSubpartitionView(
+            // RP ID
             ResultPartitionID partitionId,
+            // subpartitionIndex
             int subpartitionIndex,
-            BufferAvailabilityListener availabilityListener)
+            //
+            BufferAvailabilityListener availabilityListener
+
+    )
             throws IOException {
 
         final ResultSubpartitionView subpartitionView;
@@ -79,6 +88,7 @@ public class ResultPartitionManager implements ResultPartitionProvider {
         return subpartitionView;
     }
 
+    // 基于RPM可以间接完成对RP的管理 和 释放
     public void releasePartition(ResultPartitionID partitionId, Throwable cause) {
         synchronized (registeredPartitions) {
             ResultPartition resultPartition = registeredPartitions.remove(partitionId);
@@ -92,6 +102,7 @@ public class ResultPartitionManager implements ResultPartitionProvider {
         }
     }
 
+    // 基于RPM可以间接shutdown整个TM的 RP
     public void shutdown() {
         synchronized (registeredPartitions) {
             LOG.debug(
@@ -114,6 +125,7 @@ public class ResultPartitionManager implements ResultPartitionProvider {
     // Notifications
     // ------------------------------------------------------------------------
 
+    // 一个回调函数 对RP进行释放
     void onConsumedPartition(ResultPartition partition) {
         LOG.debug("Received consume notification from {}.", partition);
 
@@ -132,6 +144,7 @@ public class ResultPartitionManager implements ResultPartitionProvider {
         }
     }
 
+    // 获取当前TM的所有RPID
     public Collection<ResultPartitionID> getUnreleasedPartitions() {
         synchronized (registeredPartitions) {
             return registeredPartitions.keySet();

@@ -48,6 +48,11 @@ import static org.apache.flink.util.Preconditions.checkArgument;
  *
  * @param <T> the type of the record that can be emitted with this record writer
  */
+
+/**
+ * 创建 RecordWriter 的过程中，需要注入一个分区器，并且耦合一个序列化器
+ * @param <T>
+ */
 public abstract class RecordWriter<T extends IOReadableWritable> implements AvailabilityProvider {
 
     /** Default name for the output flush thread, if no name with a task reference is given. */
@@ -104,6 +109,11 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
     protected void emit(T record, int targetSubpartition) throws IOException {
         checkErroneous();
 
+
+        // 注意 这里发生了一次内存拷贝
+
+        // StreamElement => ByteBuffer
+
         targetPartition.emitRecord(serializeRecord(serializer, record), targetSubpartition);
 
         if (flushAlways) {
@@ -136,11 +146,13 @@ public abstract class RecordWriter<T extends IOReadableWritable> implements Avai
             DataOutputSerializer serializer, IOReadableWritable record) throws IOException {
         // the initial capacity should be no less than 4 bytes
         serializer.setPositionUnsafe(4);
+        // 注意 StreamElement 已经转为了一个超大型ByteBuffer
 
         // write data
         record.write(serializer);
 
         // write length
+        // 改成了 用UNSAFE 来操作内存
         serializer.writeIntUnsafe(serializer.length() - 4, 0);
 
         return serializer.wrapAsByteBuffer();

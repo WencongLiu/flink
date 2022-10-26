@@ -26,9 +26,12 @@ import java.util.Objects;
  * Identifies {@link org.apache.flink.runtime.io.network.partition.ResultSubpartition
  * ResultSubpartition} in a given subtask. Note that {@link
  * org.apache.flink.runtime.jobgraph.IntermediateResultPartitionID IntermediateResultPartitionID}
- * can not be used because it: a) identifies the whole {@link
- * org.apache.flink.runtime.io.network.partition.ResultPartition ResultPartition} b) is generated
- * randomly.
+ * can not be used because it:
+ * 为什么不用 IntermediateResultPartitionID 来唯一标识 RSP
+ * 1. 它是用来标识整个RP
+ * a) identifies the whole {@link org.apache.flink.runtime.io.network.partition.ResultPartition ResultPartition}
+ * 2. 这个ID是随机生成的
+ * b) is generated randomly.
  */
 @Internal
 public class ResultSubpartitionInfo implements Serializable {

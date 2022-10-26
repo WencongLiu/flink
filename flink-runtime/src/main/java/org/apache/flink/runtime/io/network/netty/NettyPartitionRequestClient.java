@@ -99,6 +99,7 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
     }
 
     /**
+     * 请求一个remote中间结果对应的队列
      * Requests a remote intermediate result partition queue.
      *
      * <p>The request goes to the remote producer, for which this partition request client instance
@@ -122,6 +123,7 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
 
         clientHandler.addInputChannel(inputChannel);
 
+        // PartitionRequest 是一种NettyMessage
         final PartitionRequest request =
                 new PartitionRequest(
                         partitionId,
@@ -133,6 +135,7 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
                 new ChannelFutureListener() {
                     @Override
                     public void operationComplete(ChannelFuture future) throws Exception {
+                        // 如果没有成功
                         if (!future.isSuccess()) {
                             clientHandler.removeInputChannel(inputChannel);
                             inputChannel.onError(
@@ -154,19 +157,18 @@ public class NettyPartitionRequestClient implements PartitionRequestClient {
                 };
 
         if (delayMs == 0) {
+            // 直接写入NettyMessage
             ChannelFuture f = tcpChannel.writeAndFlush(request);
             f.addListener(listener);
         } else {
+            // 注册一个延时的future
             final ChannelFuture[] f = new ChannelFuture[1];
             tcpChannel
                     .eventLoop()
                     .schedule(
-                            new Runnable() {
-                                @Override
-                                public void run() {
-                                    f[0] = tcpChannel.writeAndFlush(request);
-                                    f[0].addListener(listener);
-                                }
+                            () -> {
+                                f[0] = tcpChannel.writeAndFlush(request);
+                                f[0].addListener(listener);
                             },
                             delayMs,
                             TimeUnit.MILLISECONDS);

@@ -54,6 +54,7 @@ public interface ResultPartitionWriter extends AutoCloseable, AvailabilityProvid
     int getNumTargetKeyGroups();
 
     /** Sets the max overdraft buffer size of per gate. */
+    // 设置 最大透支 额度
     void setMaxOverdraftBuffersPerGate(int maxOverdraftBuffersPerGate);
 
     /** Writes the given serialized record to the target subpartition. */
@@ -95,14 +96,17 @@ public interface ResultPartitionWriter extends AutoCloseable, AvailabilityProvid
     /** Sets the metric group for the {@link ResultPartitionWriter}. */
     void setMetricGroup(TaskIOMetricGroup metrics);
 
+    // 对于 RSP 的 reader
     /** Returns a reader for the subpartition with the given index. */
     ResultSubpartitionView createSubpartitionView(
             int index, BufferAvailabilityListener availabilityListener) throws IOException;
 
     /** Manually trigger the consumption of data from all subpartitions. */
+    // 触发所有RSP的消费
     void flushAll();
 
     /** Manually trigger the consumption of data from the given subpartitions. */
+    // 触发特定RSP的消费
     void flush(int subpartitionIndex);
 
     /**
@@ -114,6 +118,7 @@ public interface ResultPartitionWriter extends AutoCloseable, AvailabilityProvid
      *
      * @param throwable failure cause
      */
+    // 一次性fail掉整个RP
     void fail(@Nullable Throwable throwable);
 
     /**
@@ -121,16 +126,20 @@ public interface ResultPartitionWriter extends AutoCloseable, AvailabilityProvid
      *
      * <p>Closing of partition is still needed afterwards.
      */
+    // 成功finish整个Partition
     void finish() throws IOException;
 
+    // 判断是否finish
     boolean isFinished();
 
     /**
      * Releases the partition writer which releases the produced data and no reader can consume the
      * partition any more.
      */
+    // 直接释放RW 并且让产出的数据没有消费者
     void release(Throwable cause);
 
+    // 判断是否release
     boolean isReleased();
 
     /**

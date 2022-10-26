@@ -54,6 +54,7 @@ public interface ShuffleMaster<T extends ShuffleDescriptor> extends AutoCloseabl
      *
      * @param context the corresponding shuffle context of the target job.
      */
+    // JM 内部 registerJob
     default void registerJob(JobShuffleContext context) {}
 
     /**

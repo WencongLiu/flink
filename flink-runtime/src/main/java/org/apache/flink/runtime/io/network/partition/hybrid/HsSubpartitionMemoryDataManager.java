@@ -242,6 +242,7 @@ public class HsSubpartitionMemoryDataManager implements HsDataView {
                                 .map(
                                         indexAndChannel -> {
                                             int bufferIndex = indexAndChannel.getBufferIndex();
+                                            // 无法理解
                                             return startSpillingBuffer(bufferIndex, spillDoneFuture)
                                                     .map(
                                                             (context) ->

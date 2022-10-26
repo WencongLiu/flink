@@ -23,6 +23,7 @@ import javax.annotation.Nonnegative;
 import java.util.concurrent.atomic.AtomicLong;
 
 /** Tracker of memory reservation and release within a custom limit. */
+// Memory 跟踪器
 class UnsafeMemoryBudget {
 
     private final long totalMemorySize;

@@ -25,6 +25,13 @@ import java.util.concurrent.CompletableFuture;
  * Interface defining couple of essential methods for listening on data availability using {@link
  * CompletableFuture}. For usage check out for example {@link PullingAsyncDataInput}.
  */
+
+// 可用性提供者
+// 如果存在一个组件需要对外部暴露可用性，那么它应当需要实现这个接口
+// 可用性定义
+// 1. AvailableFuture isDone
+// 2. AvailableFuture 就是 AVAILABLE
+
 @Internal
 public interface AvailabilityProvider {
     /**
@@ -34,6 +41,8 @@ public interface AvailabilityProvider {
     CompletableFuture<?> AVAILABLE = CompletableFuture.completedFuture(null);
 
     /** @return a future that is completed if the respective provider is available. */
+
+    // 对外暴露一个AvailableFuture
     CompletableFuture<?> getAvailableFuture();
 
     /**
@@ -46,6 +55,8 @@ public interface AvailabilityProvider {
      *
      * @return true if this instance is available for further processing.
      */
+    // 外部一方面可以通过getAvailableFuture所获取到的CompletableFuture判断是否可用
+    // 另一方面可以直接调用该对象的isAvailable来判断是否可用
     default boolean isAvailable() {
         CompletableFuture<?> future = getAvailableFuture();
         return future == AVAILABLE || future.isDone();
@@ -63,10 +74,13 @@ public interface AvailabilityProvider {
      *
      * @return true if this instance is available for further processing.
      */
+    // 近似可用.. 直接通过 AVAILABLE 来判断
     default boolean isApproximatelyAvailable() {
         return getAvailableFuture() == AVAILABLE;
     }
 
+
+    //这个接口 直接判断两个 AvailableFuture 的综合结果
     static CompletableFuture<?> and(CompletableFuture<?> first, CompletableFuture<?> second) {
         if (first == AVAILABLE && second == AVAILABLE) {
             return AVAILABLE;
@@ -90,6 +104,10 @@ public interface AvailabilityProvider {
      * A availability implementation for providing the helpful functions of resetting the
      * available/unavailable states.
      */
+
+    // 一个可用性提供者的示例
+    // 最开始 这个可用性提供者 包裹了一个永远也完不成的Future
+    // 可以灵活对可用/不可用进行切换
     final class AvailabilityHelper implements AvailabilityProvider {
 
         private CompletableFuture<?> availableFuture = new CompletableFuture<>();

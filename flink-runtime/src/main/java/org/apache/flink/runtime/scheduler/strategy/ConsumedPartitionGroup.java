@@ -32,17 +32,22 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.apache.flink.util.Preconditions.checkArgument;
 
 /** Group of consumed {@link IntermediateResultPartitionID}s. */
+// IntermediateResultPartitionID 的集合
 public class ConsumedPartitionGroup implements Iterable<IntermediateResultPartitionID> {
 
+    // 记录JobVertex对应的所有 IntermediateResultPartitionID
     private final List<IntermediateResultPartitionID> resultPartitions;
 
     private final AtomicInteger unfinishedPartitions;
 
+    // 记录当前算子的 IntermediateDataSetID 注意 是DataSetID
     private final IntermediateDataSetID intermediateDataSetID;
 
+    // 我靠 为什么还有个 RPT
     private final ResultPartitionType resultPartitionType;
 
     /** Number of consumer tasks in the corresponding {@link ConsumerVertexGroup}. */
+    // 我日 怎么还有一个 ConsumerVertexGroup
     private final int numConsumers;
 
     private ConsumedPartitionGroup(
@@ -56,6 +61,7 @@ public class ConsumedPartitionGroup implements Iterable<IntermediateResultPartit
         this.intermediateDataSetID = resultPartitions.get(0).getIntermediateDataSetID();
         this.resultPartitionType = Preconditions.checkNotNull(resultPartitionType);
 
+        // 理智检查..
         // Sanity check: all the partitions in one ConsumedPartitionGroup should have the same
         // IntermediateDataSetID
         for (IntermediateResultPartitionID resultPartition : resultPartitions) {

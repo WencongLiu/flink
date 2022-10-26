@@ -64,7 +64,10 @@ import static org.apache.flink.util.concurrent.FutureUtils.assertNoException;
  * {@link NetworkBufferPool} as long as it hasn't reached {@link #maxNumberOfMemorySegments} or one
  * subpartition reached the quota.
  */
+
+
 class LocalBufferPool implements BufferPool {
+
     private static final Logger LOG = LoggerFactory.getLogger(LocalBufferPool.class);
 
     private static final int UNKNOWN_CHANNEL = -1;
@@ -72,6 +75,7 @@ class LocalBufferPool implements BufferPool {
     /** Global network buffer pool to get buffers from. */
     private final NetworkBufferPool networkBufferPool;
 
+    // LBP最小MS数量
     /** The minimum number of required segments for this pool. */
     private final int numberOfRequiredMemorySegments;
 
@@ -85,6 +89,8 @@ class LocalBufferPool implements BufferPool {
      * org.apache.flink.runtime.io.network.partition.consumer.BufferManager#bufferQueue} via the
      * {@link #registeredListeners} callback.
      */
+
+    // 可用MS队列
     private final ArrayDeque<MemorySegment> availableMemorySegments =
             new ArrayDeque<MemorySegment>();
 
@@ -92,13 +98,18 @@ class LocalBufferPool implements BufferPool {
      * Buffer availability listeners, which need to be notified when a Buffer becomes available.
      * Listeners can only be registered at a time/state where no Buffer instance was available.
      */
+    /**
+     * 被注册的 Listener
+     */
     private final ArrayDeque<BufferListener> registeredListeners = new ArrayDeque<>();
 
     /** Maximum number of network buffers to allocate. */
+    // LBP最大MS数量
     private final int maxNumberOfMemorySegments;
 
     /** The current size of this pool. */
     @GuardedBy("availableMemorySegments")
+    // LBP当前MS数量
     private int currentPoolSize;
 
     /**
@@ -107,16 +118,26 @@ class LocalBufferPool implements BufferPool {
      * segments).
      */
     @GuardedBy("availableMemorySegments")
+    // 即 已经申请到的MS数量
+    // numberOfRequestedMemorySegments
+    // currentPoolSize
+    // numberOfRequiredMemorySegments
+    // 三个指标的大小关系？
     private int numberOfRequestedMemorySegments;
 
+    // 每个Channel最大Buffer数量 ---> 为什么还有Channel概念
     private final int maxBuffersPerChannel;
 
     @GuardedBy("availableMemorySegments")
+    // 每个RSP对应的Buffer数量
     private final int[] subpartitionBuffersCount;
 
+    // 每个RSP对应的BufferRecycler
     private final BufferRecycler[] subpartitionBufferRecyclers;
 
+
     @GuardedBy("availableMemorySegments")
+    // 不可用的RSP的计数
     private int unavailableSubpartitionsCount = 0;
 
     private int maxOverdraftBuffersPerGate;
@@ -128,8 +149,10 @@ class LocalBufferPool implements BufferPool {
     private boolean isDestroyed;
 
     @GuardedBy("availableMemorySegments")
+    // LBP 对应一个AvailabilityHelper
     private final AvailabilityHelper availabilityHelper = new AvailabilityHelper();
 
+    // 这个暂时没搞懂
     @GuardedBy("availableMemorySegments")
     private boolean requestingWhenAvailable;
 
@@ -184,6 +207,10 @@ class LocalBufferPool implements BufferPool {
      * @param maxBuffersPerChannel maximum number of buffers to use for each channel
      * @param maxOverdraftBuffersPerGate maximum number of overdraft buffers to use for each gate
      */
+
+
+    // NetworkBufferPool + BufferPoolOwner + Buffers ==> LBP
+
     LocalBufferPool(
             NetworkBufferPool networkBufferPool,
             int numberOfRequiredMemorySegments,
@@ -209,9 +236,14 @@ class LocalBufferPool implements BufferPool {
                 maxNumberOfMemorySegments);
 
         this.networkBufferPool = networkBufferPool;
+        this.maxNumberOfMemorySegments = maxNumberOfMemorySegments;
+
+        // numberOfRequiredMemorySegments ==> 设置为保证的和当前的大小
+
         this.numberOfRequiredMemorySegments = numberOfRequiredMemorySegments;
         this.currentPoolSize = numberOfRequiredMemorySegments;
-        this.maxNumberOfMemorySegments = maxNumberOfMemorySegments;
+
+
 
         if (numberOfSubpartitions > 0) {
             checkArgument(
@@ -226,9 +258,11 @@ class LocalBufferPool implements BufferPool {
 
         this.subpartitionBuffersCount = new int[numberOfSubpartitions];
         subpartitionBufferRecyclers = new BufferRecycler[numberOfSubpartitions];
+        // 觉得好奇怪.. 这里拆成RSPBufferRecycler有什么意义 ？
         for (int i = 0; i < subpartitionBufferRecyclers.length; i++) {
             subpartitionBufferRecyclers[i] = new SubpartitionBufferRecycler(i, this);
         }
+
         this.maxBuffersPerChannel = maxBuffersPerChannel;
         this.maxOverdraftBuffersPerGate = maxOverdraftBuffersPerGate;
 
@@ -247,6 +281,9 @@ class LocalBufferPool implements BufferPool {
     // Properties
     // ------------------------------------------------------------------------
 
+    // SingleInputGate调用
+    // 用来留存内部的MS
+    // 在这个方法中 numberOfRequestedMemorySegments 并没有发生变化..
     @Override
     public void reserveSegments(int numberOfSegmentsToReserve) throws IOException {
         checkArgument(
@@ -259,14 +296,17 @@ class LocalBufferPool implements BufferPool {
 
             if (numberOfRequestedMemorySegments < numberOfSegmentsToReserve) {
                 availableMemorySegments.addAll(
-                        networkBufferPool.requestPooledMemorySegmentsBlocking(
-                                numberOfSegmentsToReserve - numberOfRequestedMemorySegments));
+                        networkBufferPool.requestPooledMemorySegmentsBlocking(numberOfSegmentsToReserve - numberOfRequestedMemorySegments));
                 toNotify = availabilityHelper.getUnavailableToResetAvailable();
             }
+
         }
         mayNotifyAvailable(toNotify);
     }
 
+    /**
+     * isDestroyed
+     */
     @Override
     public boolean isDestroyed() {
         synchronized (availableMemorySegments) {
@@ -289,6 +329,7 @@ class LocalBufferPool implements BufferPool {
      *     unbounded pools it returns an approximation based upon {@link
      *     #getNumberOfRequiredMemorySegments()}
      */
+    // 感觉这个无法理解..
     public int getNumberOfRequestedMemorySegments() {
         if (maxNumberOfMemorySegments < NetworkBufferPool.UNBOUNDED_POOL_SIZE) {
             return maxNumberOfMemorySegments;
@@ -517,12 +558,20 @@ class LocalBufferPool implements BufferPool {
                 && numberOfRequestedOverdraftMemorySegments == 0;
     }
 
+    // 重要!
+    // 检查可用性的标准是什么？
+    // 1.1 availableMemorySegments为空
+    // --------------> 2.1 已申请的MS数量大于等于当前大小 --> 说明不能再申请了，那么真的就是用完了
+    // --------------> 2.2 已申请的MS数量小于当前大小
+    //
+    // 1.2 availableMemorySegments不为空
+    // --------------> 根据 再次判断是否为空以及其他属性 来返回 True/False
     private boolean checkAvailability() {
         assert Thread.holdsLock(availableMemorySegments);
-
         if (!availableMemorySegments.isEmpty()) {
             return shouldBeAvailable();
         }
+        // 2. availableMemorySegments为空并且已经已申请的MS数量大于等于当前大小
         if (isRequestedSizeReached()) {
             return false;
         }

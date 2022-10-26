@@ -26,13 +26,16 @@ import java.util.concurrent.CompletableFuture;
 
 /** Basic interface for inputs of stream operators. */
 @Internal
+// Multiple/Two Input的StreamTask可能会持有多个StreamTaskInput，每个Input 有自己的Index
 public interface StreamTaskInput<T> extends PushingAsyncDataInput<T>, Closeable {
+
     int UNSPECIFIED = -1;
 
     /** Returns the input index of this input. */
+    // 获取自己的input index
     int getInputIndex();
 
-    /** Prepares to spill the in-flight input buffers as checkpoint snapshot. */
-    CompletableFuture<Void> prepareSnapshot(
-            ChannelStateWriter channelStateWriter, long checkpointId) throws CheckpointException;
+    /** 把刚进来的buffer进行snapshot化*/
+    CompletableFuture<Void> prepareSnapshot(ChannelStateWriter channelStateWriter, long checkpointId) throws CheckpointException;
+
 }

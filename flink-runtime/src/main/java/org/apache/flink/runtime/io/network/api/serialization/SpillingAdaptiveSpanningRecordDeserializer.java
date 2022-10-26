@@ -34,23 +34,34 @@ import static org.apache.flink.runtime.io.network.api.serialization.RecordDeseri
 /** @param <T> The type of the record to be deserialized. */
 public class SpillingAdaptiveSpanningRecordDeserializer<T extends IOReadableWritable>
         implements RecordDeserializer<T> {
+    // 5MB 溢写数据
     public static final int DEFAULT_THRESHOLD_FOR_SPILLING = 5 * 1024 * 1024; // 5 MiBytes
-    public static final int DEFAULT_FILE_BUFFER_SIZE = 2 * 1024 * 1024;
+
+    // 文件Buffer大小 2MB
+    public static final int DEFAULT_FILE_BUFFER_SIZE = 2 * 1024 * 1024; // 2 MiBytes
+
+    // 溢写数据阈值 100KB
     private static final int MIN_THRESHOLD_FOR_SPILLING = 100 * 1024; // 100 KiBytes
+
+    // 文件buffer大小最小是 50KB
     private static final int MIN_FILE_BUFFER_SIZE = 50 * 1024; // 50 KiBytes
 
+    // BYTES的LENGTH
     static final int LENGTH_BYTES = Integer.BYTES;
 
+    // 非跨越包装器
     private final NonSpanningWrapper nonSpanningWrapper;
 
+    // 跨越包装器
     private final SpanningWrapper spanningWrapper;
 
+    // Buffer
     @Nullable private Buffer currentBuffer;
 
     public SpillingAdaptiveSpanningRecordDeserializer(String[] tmpDirectories) {
         this(tmpDirectories, DEFAULT_THRESHOLD_FOR_SPILLING, DEFAULT_FILE_BUFFER_SIZE);
     }
-
+    // 在new的时候 就创建出了 SpillingAdaptiveSpanningRecordDeserializer
     public SpillingAdaptiveSpanningRecordDeserializer(
             String[] tmpDirectories, int thresholdForSpilling, int fileBufferSize) {
         nonSpanningWrapper = new NonSpanningWrapper();
@@ -61,22 +72,28 @@ public class SpillingAdaptiveSpanningRecordDeserializer<T extends IOReadableWrit
                         Math.max(fileBufferSize, MIN_FILE_BUFFER_SIZE));
     }
 
+    // 它持续需要增加一个Buffer
     @Override
     public void setNextBuffer(Buffer buffer) throws IOException {
+        // 将Buffer 设置为 currentBuffer
         currentBuffer = buffer;
-
+        // 为什么要获取 offset呢
         int offset = buffer.getMemorySegmentOffset();
         MemorySegment segment = buffer.getMemorySegment();
+        // byte 数量
         int numBytes = buffer.getSize();
-
-        // check if some spanning record deserialization is pending
+        // 如果正在使用 spanning 那么就给 spanning 增加一个 MemorySegment
         if (spanningWrapper.getNumGatheredBytes() > 0) {
             spanningWrapper.addNextChunkFromMemorySegment(segment, offset, numBytes);
-        } else {
+        }
+        // 如果没有使用 spanning 那么就根据这个MS初始化一个 nonSpanning
+        else {
             nonSpanningWrapper.initializeFromMemorySegment(segment, offset, numBytes + offset);
         }
     }
 
+    // 不知道为什么要求获取 未消费的 Buffer 数据
+    // 从逻辑上看，nonSpanning 和 spanning 只能各选一个使用
     @Override
     public CloseableIterator<Buffer> getUnconsumedBuffer() throws IOException {
         return nonSpanningWrapper.hasRemaining()
@@ -84,6 +101,7 @@ public class SpillingAdaptiveSpanningRecordDeserializer<T extends IOReadableWrit
                 : spanningWrapper.getUnconsumedSegment();
     }
 
+    // 传过来一个Target 返回序列化结果的状态
     @Override
     public DeserializationResult getNextRecord(T target) throws IOException {
         // always check the non-spanning wrapper first.
@@ -98,7 +116,10 @@ public class SpillingAdaptiveSpanningRecordDeserializer<T extends IOReadableWrit
         return result;
     }
 
+    // 持续的去把bytes数据反序列化给Target
     private DeserializationResult readNextRecord(T target) throws IOException {
+
+        // 如果nonSpanning有数据 那就去读 nonSpanning 的
         if (nonSpanningWrapper.hasCompleteLength()) {
             return readNonSpanningRecord(target);
 
@@ -119,12 +140,11 @@ public class SpillingAdaptiveSpanningRecordDeserializer<T extends IOReadableWrit
     }
 
     private DeserializationResult readNonSpanningRecord(T target) throws IOException {
-        // following three calls to nonSpanningWrapper from object oriented design would be better
-        // to encapsulate inside nonSpanningWrapper, but then nonSpanningWrapper.readInto equivalent
-        // would have to return a tuple of DeserializationResult and recordLen, which would affect
-        // performance too much
+        // 读取record的长度
         int recordLen = nonSpanningWrapper.readInt();
+        // 如果 nonSpanningWrapper 中剩余的字节长度 足够消费
         if (nonSpanningWrapper.canReadRecord(recordLen)) {
+            // 那么就基于 nonSpanningWrapper 创建 T类型 的 target
             return nonSpanningWrapper.readInto(target);
         } else {
             spanningWrapper.transferFrom(nonSpanningWrapper, recordLen);

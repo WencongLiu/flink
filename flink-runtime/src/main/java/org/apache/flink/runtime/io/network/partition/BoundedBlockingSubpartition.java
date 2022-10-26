@@ -39,10 +39,14 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
 import static org.apache.flink.util.Preconditions.checkState;
 
 /**
+ * RSP 是一个阻塞式的 行为
  * An implementation of the ResultSubpartition for a bounded result transferred in a blocking
- * manner: The result is first produced, then consumed. The result can be consumed possibly multiple
- * times.
+ * manner: The result is first produced, then consumed.
  *
+ * bounded的result 可以被重复消费多次
+ * The result can be consumed possibly multiple times.
+ *
+ * 基于BoundedData的实现，实际的数据被存放在一个文件中，或者是一个临时的基于内存映射的文件
  * <p>Depending on the supplied implementation of {@link BoundedData}, the actual data is stored for
  * example in a file, or in a temporary memory mapped file.
  *
@@ -51,12 +55,18 @@ import static org.apache.flink.util.Preconditions.checkState;
  * <p>This class does not synchronize every buffer access. It assumes the threading model of the
  * Flink network stack and is not thread-safe beyond that.
  *
+ * 意思就是只有一线程负责add buffer flush 并且完成 write阶段
+ * 如果是在write阶段取消了，那么相同的线程就会在该阶段调用release
  * <p>This class assumes a single writer thread that adds buffers, flushes, and finishes the write
  * phase. That same thread is also assumed to perform the partition release, if the release happens
  * during the write phase.
  *
+ * 这尼玛 允许多线程读，但是每个reader内是一个线程，本质上来说还是只有一个线程度 为了线程安全
  * <p>The implementation supports multiple concurrent readers, but assumes a single thread per
- * reader. That same thread must also release the reader. In particular, after the reader was
+ * reader. That same thread must also release the reader.
+ *
+ * 一旦reader被release，那么reader获取的buffer就会被释放掉
+ * In particular, after the reader was
  * released, no buffers obtained from this reader may be accessed any more, or segmentation faults
  * might occur in some implementations.
  *
@@ -65,9 +75,11 @@ import static org.apache.flink.util.Preconditions.checkState;
  */
 final class BoundedBlockingSubpartition extends ResultSubpartition {
 
+    // reader的创建以及mmf的清除
     /** This lock guards the creation of readers and disposal of the memory mapped file. */
     private final Object lock = new Object();
 
+    //
     /** The current buffer, may be filled further over time. */
     @Nullable private BufferConsumer currentBuffer;
 

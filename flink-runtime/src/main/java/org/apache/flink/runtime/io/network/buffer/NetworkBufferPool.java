@@ -53,42 +53,61 @@ import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
+ *                                        Network Stack
  * The NetworkBufferPool is a fixed size pool of {@link MemorySegment} instances for the network
  * stack.
  *
  * <p>The NetworkBufferPool creates {@link LocalBufferPool}s from which the individual tasks draw
- * the buffers for the network data transfer. When new local buffer pools are created, the
- * NetworkBufferPool dynamically redistributes the buffers between the pools.
+ * the buffers for the network data transfer.
+ * When new local buffer pools are created, the NetworkBufferPool dynamically redistributes the buffers between the pools.
+ *
+ *  NetworkBufferPool 能够动态重分布不同 LocalBufferPool 里面的MS
+ *
  */
+
+
 public class NetworkBufferPool
         implements BufferPoolFactory, MemorySegmentProvider, AvailabilityProvider {
 
+    // 这么大方..
     public static final int UNBOUNDED_POOL_SIZE = Integer.MAX_VALUE;
 
+    // 使用警告阈值
     private static final int USAGE_WARNING_THRESHOLD = 100;
 
     private static final Logger LOG = LoggerFactory.getLogger(NetworkBufferPool.class);
 
+    // MS总数量
     private final int totalNumberOfMemorySegments;
 
+    // MS大小
     private final int memorySegmentSize;
 
+    // 暂存所有 可用的MS
     private final ArrayDeque<MemorySegment> availableMemorySegments;
 
+    // 是否被Destroy
     private volatile boolean isDestroyed;
 
     // ---- Managed buffer pools ----------------------------------------------
+    // 管理的 BPs
 
+    // 这个锁感觉没什么意思.. 就是简单一把锁
     private final Object factoryLock = new Object();
 
+    // 所有的 LBP
     private final Set<LocalBufferPool> allBufferPools = new HashSet<>();
 
+    // 可以扩展的 LBP?
     private final Set<LocalBufferPool> resizableBufferPools = new HashSet<>();
 
+    // 我尼玛..
     private int numTotalRequiredBuffers;
 
+    // timeout 对应的Duration
     private final Duration requestSegmentsTimeout;
 
+    // AvailabilityHelper 可用性帮助者
     private final AvailabilityHelper availabilityHelper = new AvailabilityHelper();
 
     private int lastCheckedUsage = -1;
@@ -99,19 +118,24 @@ public class NetworkBufferPool
     }
 
     /** Allocates all {@link MemorySegment} instances managed by this pool. */
+    // 高度怀疑 逻辑上分配给你了，你自己去分配就可以
     public NetworkBufferPool(
             int numberOfSegmentsToAllocate, int segmentSize, Duration requestSegmentsTimeout) {
+        // 所有的MS数量
         this.totalNumberOfMemorySegments = numberOfSegmentsToAllocate;
+        // MS的Size
         this.memorySegmentSize = segmentSize;
 
         Preconditions.checkNotNull(requestSegmentsTimeout);
         checkArgument(
                 requestSegmentsTimeout.toMillis() > 0,
                 "The timeout for requesting exclusive buffers should be positive.");
+        // MS申请的timeout
         this.requestSegmentsTimeout = requestSegmentsTimeout;
 
         final long sizeInLong = (long) segmentSize;
 
+        // 连记录 MS 数量的 ArrayDeque 都申请不到了
         try {
             this.availableMemorySegments = new ArrayDeque<>(numberOfSegmentsToAllocate);
         } catch (OutOfMemoryError err) {
@@ -168,12 +192,14 @@ public class NetworkBufferPool
      * factoryLock to avoid deadlock.
      */
     @Nullable
+    // 非阻塞式 拿一个MS
     public MemorySegment requestPooledMemorySegment() {
         synchronized (availableMemorySegments) {
             return internalRequestMemorySegment();
         }
     }
 
+    // 阻塞式 一次性从NetworkBufferPool中拿出一个List
     public List<MemorySegment> requestPooledMemorySegmentsBlocking(int numberOfSegmentsToRequest)
             throws IOException {
         return internalRequestMemorySegments(numberOfSegmentsToRequest);
@@ -183,6 +209,7 @@ public class NetworkBufferPool
      * Corresponding to {@link #requestPooledMemorySegmentsBlocking} and {@link
      * #requestPooledMemorySegment}, this method is for pooled memory segments recycling.
      */
+    // 真几把扯淡---还能把散落在其他地方的MS---还回来
     public void recyclePooledMemorySegment(MemorySegment segment) {
         // Adds the segment back to the queue, which does not immediately free the memory
         // however, since this happens when references to the global pool are also released,
@@ -214,7 +241,7 @@ public class NetworkBufferPool
             if (numberOfSegmentsToRequest == 0) {
                 return Collections.emptyList();
             }
-
+            // 这里是最关键的实现了 似乎分配 Unpooled MS 会触发这些LocalBufferPool的 重分配
             tryRedistributeBuffers(numberOfSegmentsToRequest);
         }
 
@@ -298,6 +325,7 @@ public class NetworkBufferPool
 
             // note: if this fails, we're fine for the buffer pool since we already recycled the
             // segments
+            // 这个方法看起来很关键
             redistributeBuffers();
         }
     }
@@ -348,24 +376,29 @@ public class NetworkBufferPool
         }
     }
 
+    // 获取可用内存
     public long getAvailableMemory() {
         return (long) getNumberOfAvailableMemorySegments() * memorySegmentSize;
     }
 
+    // 获取已经被使用的MS
     public int getNumberOfUsedMemorySegments() {
         return getTotalNumberOfMemorySegments() - getNumberOfAvailableMemorySegments();
     }
 
+    // 获取已经使用的内存
     public long getUsedMemory() {
         return (long) getNumberOfUsedMemorySegments() * memorySegmentSize;
     }
 
+    // 获取已经注册的BP数量
     public int getNumberOfRegisteredBufferPools() {
         synchronized (factoryLock) {
             return allBufferPools.size();
         }
     }
 
+    // 获取已经注册的LBP请求的MS数量
     public long getNumberOfRequestedMemorySegments() {
         long requestedSegments = 0;
         synchronized (factoryLock) {
@@ -376,10 +409,12 @@ public class NetworkBufferPool
         return requestedSegments;
     }
 
+    // 获取请求的Memory大小
     public long getRequestedMemory() {
         return getNumberOfRequestedMemorySegments() * memorySegmentSize;
     }
 
+    // 获取MS使用百分比
     public int getRequestedSegmentsUsage() {
         int totalNumberOfMemorySegments = getTotalNumberOfMemorySegments();
         return totalNumberOfMemorySegments == 0
@@ -426,6 +461,7 @@ public class NetworkBufferPool
         }
     }
 
+    // 真JB扯淡
     public int countBuffers() {
         int buffers = 0;
 
@@ -446,6 +482,7 @@ public class NetworkBufferPool
 
     // ------------------------------------------------------------------------
     // BufferPoolFactory
+    // 看来NetworkBufferPool
     // ------------------------------------------------------------------------
 
     @Override
@@ -498,10 +535,12 @@ public class NetworkBufferPool
                                 getConfigDescription()));
             }
 
+            // 加锁 加锁 加锁
             this.numTotalRequiredBuffers += numRequiredBuffers;
 
             // We are good to go, create a new buffer pool and redistribute
             // non-fixed size buffers.
+            // 创建一个新的 LocalBufferPool
             LocalBufferPool localBufferPool =
                     new LocalBufferPool(
                             this,
@@ -511,12 +550,15 @@ public class NetworkBufferPool
                             maxBuffersPerChannel,
                             maxOverdraftBuffersPerGate);
 
+            // 把所有LBP放进 allBufferPools
             allBufferPools.add(localBufferPool);
 
+            // 这个逻辑看起来很奇怪 为什么 numRequiredBuffers 会大于 maxUsedBuffers，意思就是如果大了，就不支持这样做
             if (numRequiredBuffers < maxUsedBuffers) {
                 resizableBufferPools.add(localBufferPool);
             }
 
+            // 进行一次重新分配
             redistributeBuffers();
 
             return localBufferPool;
@@ -524,6 +566,7 @@ public class NetworkBufferPool
     }
 
     @Override
+    // 这么sao 直接把这个bufferPool给destroy掉
     public void destroyBufferPool(BufferPool bufferPool) {
         if (!(bufferPool instanceof LocalBufferPool)) {
             throw new IllegalArgumentException("bufferPool is no LocalBufferPool");
@@ -532,6 +575,8 @@ public class NetworkBufferPool
         synchronized (factoryLock) {
             if (allBufferPools.remove(bufferPool)) {
                 numTotalRequiredBuffers -= bufferPool.getNumberOfRequiredMemorySegments();
+
+                // 感觉这里强制认为LocalBufferPool失去引用会自动被清理
                 resizableBufferPools.remove(bufferPool);
 
                 redistributeBuffers();
@@ -600,9 +645,11 @@ public class NetworkBufferPool
         // All buffers, which are not among the required ones
         final int numAvailableMemorySegment = totalNumberOfMemorySegments - numTotalRequiredBuffers;
 
+        //
         if (numAvailableMemorySegment == 0) {
             // in this case, we need to redistribute buffers so that every pool gets its minimum
             for (LocalBufferPool bufferPool : resizableBufferPools) {
+                // 把每个LBP强制设置成最小Buffer数
                 bufferPool.setNumBuffers(bufferPool.getNumberOfRequiredMemorySegments());
             }
             return;

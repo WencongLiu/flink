@@ -138,6 +138,7 @@ public class MemoryUtils {
     static ByteBuffer wrapUnsafeMemoryWithByteBuffer(long address, int size) {
         //noinspection OverlyBroadCatchBlock
         try {
+            // 程序运行到这里，才会去申请堆外内存
             ByteBuffer buffer = (ByteBuffer) UNSAFE.allocateInstance(DIRECT_BYTE_BUFFER_CLASS);
             UNSAFE.putLong(buffer, BUFFER_ADDRESS_FIELD_OFFSET, address);
             UNSAFE.putInt(buffer, BUFFER_CAPACITY_FIELD_OFFSET, size);

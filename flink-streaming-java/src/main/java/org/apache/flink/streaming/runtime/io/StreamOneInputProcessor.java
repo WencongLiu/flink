@@ -62,15 +62,21 @@ public final class StreamOneInputProcessor<IN> implements StreamInputProcessor {
 
     @Override
     public DataInputStatus processInput() throws Exception {
+        // Task中最重要的是 看来最重要的是
+        // StreamTaskInput.emitNext(DataOutput)
         DataInputStatus status = input.emitNext(output);
-
+        // status代表了数据处理的状态
         if (status == DataInputStatus.END_OF_DATA) {
+            // 如果是 END_OF_DATA，那么就调用一次 endOfInputAware
             endOfInputAware.endInput(input.getInputIndex() + 1);
+            // 赋值一次 output
             output = new FinishedDataOutput<>();
         } else if (status == DataInputStatus.END_OF_RECOVERY) {
+            // 如果是 END_OF_RECOVERY
             if (input instanceof RecoverableStreamTaskInput) {
                 input = ((RecoverableStreamTaskInput<IN>) input).finishRecovery();
             }
+            // 返回 MORE_AVAILABLE
             return DataInputStatus.MORE_AVAILABLE;
         }
 

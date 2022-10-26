@@ -73,6 +73,7 @@ public class HsFileDataManager implements Runnable, BufferRecycler {
      * Maximum time to wait when requesting read buffers from the buffer pool before throwing an
      * exception.
      */
+    // bufferRequest
     private final Duration bufferRequestTimeout;
 
     /** Lock used to synchronize multi-thread access to thread-unsafe fields. */
@@ -90,16 +91,21 @@ public class HsFileDataManager implements Runnable, BufferRecycler {
 
     private final Path dataFilePath;
 
+    // 为什么只存了一个 dataIndex
     private final HsFileDataIndex dataIndex;
 
+    // 这个fileReaderFactory还tm放到这个Reader里面去
     private final HsSubpartitionFileReader.Factory fileReaderFactory;
 
+    // 基于Configuration配置HS
     private final HybridShuffleConfiguration hybridShuffleConfiguration;
 
+    // ByteBuffer
     private final ByteBuffer headerBuf = BufferReaderWriterUtil.allocatedHeaderBuffer();
 
     /** All readers waiting to read data of different subpartitions. */
     @GuardedBy("lock")
+    // 一堆Reader
     private final Set<HsSubpartitionFileReader> allReaders = new HashSet<>();
 
     /**

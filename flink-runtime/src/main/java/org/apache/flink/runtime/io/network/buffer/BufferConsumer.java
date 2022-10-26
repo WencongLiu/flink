@@ -39,6 +39,7 @@ import static org.apache.flink.util.Preconditions.checkState;
  * can be a different thread reading from it using {@link BufferConsumer}.
  */
 @NotThreadSafe
+// 就是说这个BufferConsumer会持有一个Buffer的引用
 public class BufferConsumer implements Closeable {
     private final Buffer buffer;
 
@@ -83,6 +84,7 @@ public class BufferConsumer implements Closeable {
      *     shares the reference counter with the parent {@link BufferConsumer} - in order to recycle
      *     memory both of them must be recycled/closed.
      */
+    // 获取没有读取的Buffer
     public Buffer build() {
         writerPosition.update();
         int cachedWriterPosition = writerPosition.getCached();
@@ -190,6 +192,13 @@ public class BufferConsumer implements Closeable {
      * <p>Writer ({@link BufferBuilder}) and reader ({@link BufferConsumer}) caches must be
      * implemented independently of one another - so that the cached values can not accidentally
      * leak from one to another.
+     */
+
+    /**
+     * CachedPositionMarker 包裹了 BufferBuilder 的 PositionMarker 并对外提供
+     * 1. 当前 BufferBuilder有没有写完
+     * 2. 强制获取 当前 BufferBuilder的最新index
+     * 3. 获取 BufferBuilder的最新index 对应的缓存数据
      */
     private static class CachedPositionMarker {
         private final PositionMarker positionMarker;

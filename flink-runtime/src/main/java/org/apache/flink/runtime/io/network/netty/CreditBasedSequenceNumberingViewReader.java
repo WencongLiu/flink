@@ -36,23 +36,32 @@ import java.io.IOException;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
 
+
+// 基于信用机制的Subpartition Reader
 /**
  * Simple wrapper for the subpartition view used in the new network credit-based mode.
  *
  * <p>It also keeps track of available buffers and notifies the outbound handler about
  * non-emptiness, similar to the {@link LocalInputChannel}.
  */
+
+// 这种 Reader 一旦加入 PartitionRequestQueue，由 PRQ来操作 Reader
 class CreditBasedSequenceNumberingViewReader
         implements BufferAvailabilityListener, NetworkSequenceViewReader {
 
+    // requestLock
     private final Object requestLock = new Object();
 
+    // Inputchannel 的 ID
     private final InputChannelID receiverId;
 
+    // 反向引用 Partition请求队列
     private final PartitionRequestQueue requestQueue;
 
+    // 初始值
     private final int initialCredit;
 
+    // 每个Reader都持有了 一个 RSPV
     private volatile ResultSubpartitionView subpartitionView;
 
     /**
@@ -62,21 +71,29 @@ class CreditBasedSequenceNumberingViewReader
      * <p>It is mainly used to avoid repeated registrations but should be accessed by a single
      * thread only since there is no synchronisation.
      */
+    // 判断这个reader是否已在 PartitionRequestQueue 中排队
     private boolean isRegisteredAsAvailable = false;
 
     /** The number of available buffers for holding data on the consumer side. */
+    // 消费者这一侧可用的buffer数量
     private int numCreditsAvailable;
 
+    // 意思就是这个reader被创建时会初始化一些信息
     CreditBasedSequenceNumberingViewReader(
             InputChannelID receiverId, int initialCredit, PartitionRequestQueue requestQueue) {
         checkArgument(initialCredit >= 0, "Must be non-negative.");
-
+        // 将 receiverId 作为 唯一ID
         this.receiverId = receiverId;
+        // 上游为下游预留的初始信用值
+        // 初始信用值
         this.initialCredit = initialCredit;
+        // 可以用的信用值额度
         this.numCreditsAvailable = initialCredit;
+        // 持有一个Partition请求队列
         this.requestQueue = requestQueue;
     }
 
+    // 下游过来注册的时候，创建一个reader，并向reader内 提供 RPID 和 subpartitionIndex
     @Override
     public void requestSubpartitionView(
             ResultPartitionProvider partitionProvider,
@@ -90,22 +107,25 @@ class CreditBasedSequenceNumberingViewReader
                 // schedule a separate task at the event loop that will
                 // start consuming this. Otherwise the reference to the
                 // view cannot be available in getNextBuffer().
-                this.subpartitionView =
-                        partitionProvider.createSubpartitionView(
-                                resultPartitionId, subPartitionIndex, this);
+
+                // 创建了一个RSPV
+                // RSPV本质上是在RSP和自己之间建立了一种联系
+                this.subpartitionView = partitionProvider.createSubpartitionView(resultPartitionId, subPartitionIndex, this);
             } else {
                 throw new IllegalStateException("Subpartition already requested");
             }
         }
-
+        // 创建RSPV的时候 就notify了
         notifyDataAvailable();
     }
 
+    // 意思是下游回来增加信用值，即为 消费者这一侧可用的buffer数量
     @Override
     public void addCredit(int creditDeltas) {
         numCreditsAvailable += creditDeltas;
     }
 
+    // 对于Hybrid Shuffle 这个方法不会被调用
     @Override
     public void resumeConsumption() {
         if (initialCredit == 0) {
@@ -116,17 +136,23 @@ class CreditBasedSequenceNumberingViewReader
         subpartitionView.resumeConsumption();
     }
 
+    // PartitionRequestQueue 调用
+    // 所有Record都被处理 然后仅仅调用 subpartitionView.acknowledgeAllDataProcessed()
     @Override
     public void acknowledgeAllRecordsProcessed() {
         subpartitionView.acknowledgeAllDataProcessed();
     }
 
+    // PartitionRequestQueue 调用
+    // 确认 CreditBasedSequenceNumberingViewReader 被放到 PRQ 中？ 是PRQ来调用的
     @Override
     public void setRegisteredAsAvailable(boolean isRegisteredAvailable) {
         this.isRegisteredAsAvailable = isRegisteredAvailable;
     }
 
     @Override
+    // PartitionRequestQueue 调用
+    //
     public boolean isRegisteredAsAvailable() {
         return isRegisteredAsAvailable;
     }
@@ -139,6 +165,9 @@ class CreditBasedSequenceNumberingViewReader
      *     that {@code getNextDataType(bufferAndBacklog) != NONE <=>
      *     AvailabilityWithBacklog#isAvailable()}!
      */
+
+    // PartitionRequestQueue 调用
+    //
     @Override
     public ResultSubpartitionView.AvailabilityWithBacklog getAvailabilityAndBacklog() {
         return subpartitionView.getAvailabilityAndBacklog(numCreditsAvailable);
@@ -159,6 +188,7 @@ class CreditBasedSequenceNumberingViewReader
      * @return the next data type if the next buffer can be pulled immediately or {@link
      *     Buffer.DataType#NONE}
      */
+    // 解析 BufferAndBacklog 的 类型
     private Buffer.DataType getNextDataType(BufferAndBacklog bufferAndBacklog) {
         final Buffer.DataType nextDataType = bufferAndBacklog.getNextDataType();
         if (numCreditsAvailable > 0 || nextDataType.isEvent()) {
@@ -167,11 +197,15 @@ class CreditBasedSequenceNumberingViewReader
         return Buffer.DataType.NONE;
     }
 
+    // PartitionRequestQueue 调用
+    //
     @Override
     public InputChannelID getReceiverId() {
         return receiverId;
     }
 
+    // PartitionRequestQueue 调用
+    // 间接调用 subpartitionView.notifyNewBufferSize(newBufferSize)
     @Override
     public void notifyNewBufferSize(int newBufferSize) {
         subpartitionView.notifyNewBufferSize(newBufferSize);

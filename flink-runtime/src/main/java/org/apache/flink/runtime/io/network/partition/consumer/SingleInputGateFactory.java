@@ -199,6 +199,8 @@ public class SingleInputGateFactory {
                     ++subpartitionIndex) {
                 inputChannels[channelIdx] =
                         createInputChannel(
+                                // InputChannel会把InputGate反向引用起来
+                                // 所以还是要看看InputChannel的具体实现
                                 inputGate,
                                 channelIdx,
                                 shuffleDescriptors[i],
@@ -218,6 +220,9 @@ public class SingleInputGateFactory {
                 channelStatistics);
     }
 
+    /**
+     * 注意 这里的 index 是递增的
+     */
     private InputChannel createInputChannel(
             SingleInputGate inputGate,
             int index,
@@ -260,6 +265,9 @@ public class SingleInputGateFactory {
     }
 
     @VisibleForTesting
+    /**
+     * 注意 这里的index是递增的
+     */
     protected InputChannel createKnownInputChannel(
             SingleInputGate inputGate,
             int index,
@@ -294,6 +302,7 @@ public class SingleInputGateFactory {
                     connectionManager,
                     partitionRequestInitialBackoff,
                     partitionRequestMaxBackoff,
+                    // 这个很重要！
                     networkBuffersPerChannel,
                     metrics);
         }

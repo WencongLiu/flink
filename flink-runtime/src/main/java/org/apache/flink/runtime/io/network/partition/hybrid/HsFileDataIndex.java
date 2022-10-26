@@ -21,6 +21,15 @@ package org.apache.flink.runtime.io.network.partition.hybrid;
 import java.util.List;
 import java.util.Optional;
 
+
+/**
+ * 对于每个被溢写出去的 Data Buffer
+ * 这个类记录了 Data Buffer 归属的 RSP
+ * Data Buffer 在 RSP 对应的index
+ * 它在文件内的offset
+ * 它的可读性
+ */
+
 /**
  * Index of spilled data. For each spilled data buffer, this maintains the subpartition it belongs
  * to, the buffer index within the subpartition, the offset in file it begin with, and its

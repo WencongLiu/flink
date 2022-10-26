@@ -34,6 +34,7 @@ import java.io.UTFDataFormatException;
  *
  * <p>The paging assumes that all memory segments are of the same size.
  */
+// 一般情况下 OutputView 都是 读取类型化数据 然后 保存byte数据在本地
 public abstract class AbstractPagedOutputView implements DataOutputView, MemorySegmentWritable {
 
     private MemorySegment currentSegment; // the current memory segment to write to

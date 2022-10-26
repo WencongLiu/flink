@@ -47,6 +47,7 @@ class PartitionRequestServerHandler extends SimpleChannelInboundHandler<NettyMes
 
     private final TaskEventPublisher taskEventPublisher;
 
+    // 重中之重：用来发现数据可用 然后触发数据消费
     private final PartitionRequestQueue outboundQueue;
 
     PartitionRequestServerHandler(
@@ -69,6 +70,7 @@ class PartitionRequestServerHandler extends SimpleChannelInboundHandler<NettyMes
         super.channelUnregistered(ctx);
     }
 
+    // 我理解这里是上游的Server端
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, NettyMessage msg) throws Exception {
         try {
@@ -77,6 +79,7 @@ class PartitionRequestServerHandler extends SimpleChannelInboundHandler<NettyMes
             // ----------------------------------------------------------------
             // Intermediate result partition requests
             // ----------------------------------------------------------------
+            // 一旦本地NettyServer收到了PR的内容，就开始以下流程：
             if (msgClazz == PartitionRequest.class) {
                 PartitionRequest request = (PartitionRequest) msg;
 
@@ -84,13 +87,13 @@ class PartitionRequestServerHandler extends SimpleChannelInboundHandler<NettyMes
 
                 try {
                     NetworkSequenceViewReader reader;
-                    reader =
-                            new CreditBasedSequenceNumberingViewReader(
-                                    request.receiverId, request.credit, outboundQueue);
 
-                    reader.requestSubpartitionView(
-                            partitionProvider, request.partitionId, request.queueIndex);
-
+                    // 1. 接收到请求之后 直接创建 NetworkSequenceViewReader
+                    reader = new CreditBasedSequenceNumberingViewReader(request.receiverId, request.credit, outboundQueue);
+                    // 直接创建一个View
+                    // 然后触发一次reader读取
+                    reader.requestSubpartitionView(partitionProvider, request.partitionId, request.queueIndex);
+                    // 这尼玛也没有notify啊 只是把元素放进map里面了
                     outboundQueue.notifyReaderCreated(reader);
                 } catch (PartitionNotFoundException notFound) {
                     respondWithError(ctx, notFound, request.receiverId);
@@ -110,7 +113,7 @@ class PartitionRequestServerHandler extends SimpleChannelInboundHandler<NettyMes
                 }
             } else if (msgClazz == CancelPartitionRequest.class) {
                 CancelPartitionRequest request = (CancelPartitionRequest) msg;
-
+                // skip
                 outboundQueue.cancel(request.receiverId);
             } else if (msgClazz == CloseRequest.class) {
                 outboundQueue.close();

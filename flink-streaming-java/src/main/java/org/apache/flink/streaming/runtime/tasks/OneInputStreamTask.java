@@ -62,14 +62,17 @@ import static org.apache.flink.util.Preconditions.checkState;
 @Internal
 public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamOperator<IN, OUT>> {
 
+    //这个没看出来是什么用处
     @Nullable private CheckpointBarrierHandler checkpointBarrierHandler;
 
+    //WatermarkGauge
     private final WatermarkGauge inputWatermarkGauge = new WatermarkGauge();
 
     /**
      * Constructor for initialization, possibly with initial state (recovery / savepoint / etc).
      *
      * @param env The task environment for this task.
+     * 这个TasK会接收一个环境对象
      */
     public OneInputStreamTask(Environment env) throws Exception {
         super(env);
@@ -93,13 +96,16 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
 
     @Override
     public void init() throws Exception {
+        // 配置
         StreamConfig configuration = getConfiguration();
         int numberOfInputs = configuration.getNumberOfNetworkInputs();
 
         if (numberOfInputs > 0) {
             CheckpointedInputGate inputGate = createCheckpointedInputGate();
             Counter numRecordsIn = setupNumRecordsInCounter(mainOperator);
+            // DataOutput  StreamOneInputProcessor 持有
             DataOutput<IN> output = createDataOutput(numRecordsIn);
+            // StreamTaskInput StreamOneInputProcessor 持有
             StreamTaskInput<IN> input = createTaskInput(inputGate);
 
             StreamConfig.InputConfig[] inputConfigs =
@@ -116,9 +122,10 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
                     .getMetricGroup()
                     .getIOMetricGroup()
                     .reuseRecordsInputCounter(numRecordsIn);
-
+            // 可以看到 operationChain 才被传递给了 StreamOneInputProcessor
             inputProcessor = new StreamOneInputProcessor<>(input, output, operatorChain);
         }
+        // 这是一些其他的内容
         mainOperator
                 .getMetricGroup()
                 .gauge(MetricNames.IO_CURRENT_INPUT_WATERMARK, inputWatermarkGauge);
@@ -153,6 +160,7 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
     }
 
     @SuppressWarnings("unchecked")
+    // 创建一个 CheckpointedInputGate
     private CheckpointedInputGate createCheckpointedInputGate() {
         IndexedInputGate[] inputGates = getEnvironment().getAllInputGates();
 
@@ -178,13 +186,20 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
         return Iterables.getOnlyElement(Arrays.asList(checkpointedInputGates));
     }
 
+    // 创建一个 DataOutput，注意：一般情况下 finishedOnRestoreInput 是空，所以 DataOutput接收的 Operator 就是 mainOperator
     private DataOutput<IN> createDataOutput(Counter numRecordsIn) {
         return new StreamTaskNetworkOutput<>(
+                // operatorChain 就是算子Chain
+                // mainOperator 是算子主入口
+                // 这一步 是在确定主入口..
+                // 如果没有恢复 那么就是从 mainOperator进入
+                // 接下来我们看看 mainOperator 是怎么被创建出来的
                 operatorChain.getFinishedOnRestoreInputOrDefault(mainOperator),
                 inputWatermarkGauge,
                 numRecordsIn);
     }
 
+    // 可以看到 StreamTaskInput的实现 依赖于 CheckpointedInputGate
     private StreamTaskInput<IN> createTaskInput(CheckpointedInputGate inputGate) {
         int numberOfInputChannels = inputGate.getNumberOfInputChannels();
         StatusWatermarkValve statusWatermarkValve = new StatusWatermarkValve(numberOfInputChannels);
@@ -211,8 +226,12 @@ public class OneInputStreamTask<IN, OUT> extends StreamTask<OUT, OneInputStreamO
      * The network data output implementation used for processing stream elements from {@link
      * StreamTaskNetworkInput} in one input processor.
      */
+    // 这很明显是一个内部类
+    // 很有意思的一点是 这个 StreamTaskNetworkOutput.emitRecord 就是把一条数据传给了 mainOperator
+    // 至于这个数据 在mainOperator上怎么流转到operatorChain的 根本就不管
     private static class StreamTaskNetworkOutput<IN> implements DataOutput<IN> {
 
+        // 可以看到 operator 本质上是 一个Input 的实现类，那么 operator 是怎么被初始化的呢
         private final Input<IN> operator;
 
         private final WatermarkGauge watermarkGauge;

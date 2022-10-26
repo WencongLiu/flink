@@ -139,6 +139,7 @@ public class FileChannelOutputView extends AbstractPagedOutputView {
     @Override
     protected MemorySegment nextSegment(MemorySegment current, int posInSegment)
             throws IOException {
+        // 会持续写入到磁盘中
         if (current != null) {
             writeSegment(current, posInSegment);
         }

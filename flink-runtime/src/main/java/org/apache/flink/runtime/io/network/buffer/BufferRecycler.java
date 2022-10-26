@@ -21,6 +21,9 @@ package org.apache.flink.runtime.io.network.buffer;
 import org.apache.flink.core.memory.MemorySegment;
 
 /** Interface for recycling {@link MemorySegment}s. */
+
+// Buffer 回收器
+
 public interface BufferRecycler {
 
     /**
@@ -28,6 +31,8 @@ public interface BufferRecycler {
      *
      * @param memorySegment The memory segment to be recycled.
      */
+
+    // 只要满足回收语义即可
     void recycle(MemorySegment memorySegment);
 
     /** The buffer recycler does nothing for recycled segment. */

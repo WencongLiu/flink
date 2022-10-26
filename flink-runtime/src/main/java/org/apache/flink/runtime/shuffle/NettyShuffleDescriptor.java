@@ -32,10 +32,11 @@ public class NettyShuffleDescriptor implements ShuffleDescriptor {
 
     private static final long serialVersionUID = 852181945034989215L;
 
+    // ResourceID 标识？
     private final ResourceID producerLocation;
-
+    // Partition连接用的Info
     private final PartitionConnectionInfo partitionConnectionInfo;
-
+    // RP自己的info
     private final ResultPartitionID resultPartitionID;
 
     public NettyShuffleDescriptor(
@@ -47,6 +48,7 @@ public class NettyShuffleDescriptor implements ShuffleDescriptor {
         this.resultPartitionID = resultPartitionID;
     }
 
+    //
     public ConnectionID getConnectionId() {
         return partitionConnectionInfo.getConnectionId();
     }

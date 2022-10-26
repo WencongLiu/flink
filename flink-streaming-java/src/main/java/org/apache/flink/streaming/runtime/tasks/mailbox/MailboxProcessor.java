@@ -41,6 +41,7 @@ import java.util.Optional;
 import static org.apache.flink.streaming.runtime.tasks.mailbox.TaskMailbox.MIN_PRIORITY;
 import static org.apache.flink.util.Preconditions.checkState;
 
+// 可以让任务处理 checkpoint trigger, timer firing 这些可以在一个线程里顺序执行
 /**
  * This class encapsulates the logic of the mailbox-based execution model. At the core of this model
  * {@link #runMailboxLoop()} that continuously executes the provided {@link MailboxDefaultAction} in

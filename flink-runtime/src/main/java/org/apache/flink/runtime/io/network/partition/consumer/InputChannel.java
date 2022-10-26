@@ -48,36 +48,45 @@ import static org.apache.flink.util.Preconditions.checkNotNull;
  *   <li>{@link #releaseAllResources()}
  * </ol>
  */
+// 就是一个消费行为呗 很简单
+
 public abstract class InputChannel {
     /** The info of the input channel to identify it globally within a task. */
+    // NND 自己也有一个Index
     protected final InputChannelInfo channelInfo;
 
     /** The parent partition of the subpartition consumed by this channel. */
+    // 它还记着 RPID 呢
     protected final ResultPartitionID partitionId;
 
     /** The index of the subpartition consumed by this channel. */
+    // 上游消费的 index
     protected final int consumedSubpartitionIndex;
 
+    // 反向饮用一个 SIG
     protected final SingleInputGate inputGate;
 
     // - Asynchronous error notification --------------------------------------
-
+    // 我靠 原子引用
     private final AtomicReference<Throwable> cause = new AtomicReference<Throwable>();
 
+    // 补偿 回退 抵扣
     // - Partition request backoff --------------------------------------------
 
+    /**
+     * 没看懂这几个什么意思
+     */
     /** The initial backoff (in ms). */
     protected final int initialBackoff;
-
     /** The maximum backoff (in ms). */
     protected final int maxBackoff;
-
-    protected final Counter numBytesIn;
-
-    protected final Counter numBuffersIn;
-
     /** The current backoff (in ms). */
     private int currentBackoff;
+
+    // 计算InputGate的 numBytes 和 numBuffers
+    protected final Counter numBytesIn;
+    protected final Counter numBuffersIn;
+
 
     protected InputChannel(
             SingleInputGate inputGate,
@@ -115,23 +124,16 @@ public abstract class InputChannel {
     // Properties
     // ------------------------------------------------------------------------
 
-    /** Returns the index of this channel within its {@link SingleInputGate}. */
+
     public int getChannelIndex() {
         return channelInfo.getInputChannelIdx();
     }
-
-    /**
-     * Returns the info of this channel, which uniquely identifies the channel in respect to its
-     * operator instance.
-     */
     public InputChannelInfo getChannelInfo() {
         return channelInfo;
     }
-
     public ResultPartitionID getPartitionId() {
         return partitionId;
     }
-
     public int getConsumedSubpartitionIndex() {
         return consumedSubpartitionIndex;
     }
@@ -141,12 +143,14 @@ public abstract class InputChannel {
      * exactly-once mode, the upstream will be blocked and become unavailable. This method tries to
      * unblock the corresponding upstream and resume data consumption.
      */
+    // 似乎就是在解锁上游
     public abstract void resumeConsumption() throws IOException;
 
     /**
      * When received {@link EndOfData} from one channel, it need to acknowledge after this event get
      * processed.
      */
+    // 自己提供出去哟还能过来确认？
     public abstract void acknowledgeAllRecordsProcessed() throws IOException;
 
     /**
@@ -160,40 +164,45 @@ public abstract class InputChannel {
      * regardless of whether the channel was empty before. That ensures that the parent InputGate
      * will always be notified about the exception.
      */
+    // 如果这个inputChannel内有数据 就应当直接notify
     protected void notifyChannelNonEmpty() {
         inputGate.notifyChannelNonEmpty(this);
     }
 
-    public void notifyPriorityEvent(int priorityBufferNumber) {
-        inputGate.notifyPriorityEvent(this, priorityBufferNumber);
-    }
+    public void notifyPriorityEvent(int priorityBufferNumber) { inputGate.notifyPriorityEvent(this, priorityBufferNumber);}
 
+
+    // 这个就看不太懂了
     protected void notifyBufferAvailable(int numAvailableBuffers) throws IOException {}
 
     // ------------------------------------------------------------------------
     // Consume
     // ------------------------------------------------------------------------
+    // 这里的Consume我理解就是对外暴露 消费上游的数据
 
     /**
      * Requests the subpartition specified by {@link #partitionId} and {@link
      * #consumedSubpartitionIndex}.
      */
+    // 请求上游RSP
     abstract void requestSubpartition() throws IOException, InterruptedException;
 
     /**
      * Returns the next buffer from the consumed subpartition or {@code Optional.empty()} if there
      * is no data to return.
      */
-    abstract Optional<BufferAndAvailability> getNextBuffer()
-            throws IOException, InterruptedException;
+    // 最核心的方法
+    abstract Optional<BufferAndAvailability> getNextBuffer() throws IOException, InterruptedException;
 
     /**
      * Called by task thread when checkpointing is started (e.g., any input channel received
      * barrier).
      */
+    // 通知所有RemoteInputChannel 已经开始做CK了
     public void checkpointStarted(CheckpointBarrier barrier) throws CheckpointException {}
 
     /** Called by task thread on cancel/complete to clean-up temporary data. */
+    // 通知所有RemoteInputChannel CK已经做完了
     public void checkpointStopped(long checkpointId) {}
 
     public void convertToPriorityEvent(int sequenceNumber) throws IOException {}
@@ -210,6 +219,7 @@ public abstract class InputChannel {
      * ensure that the producer will wait for all backwards events. Otherwise, this will lead to an
      * Exception at runtime.
      */
+    // 我靠 反向发送Event
     abstract void sendTaskEvent(TaskEvent event) throws IOException;
 
     // ------------------------------------------------------------------------
