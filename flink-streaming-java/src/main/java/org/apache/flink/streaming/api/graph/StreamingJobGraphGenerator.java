@@ -184,6 +184,9 @@ public class StreamingJobGraphGenerator {
 
     private final Map<Integer, InputOutputFormatContainer> chainedInputOutputFormats;
 
+    // the ids of nodes that output in BLOCKING result partition type
+    private final Set<Integer> outputBlockingNodesID;
+
     private final StreamGraphHasher defaultStreamGraphHasher;
     private final List<StreamGraphHasher> legacyStreamGraphHashers;
 
@@ -224,6 +227,7 @@ public class StreamingJobGraphGenerator {
         this.chainedMinResources = new HashMap<>();
         this.chainedPreferredResources = new HashMap<>();
         this.chainedInputOutputFormats = new HashMap<>();
+        this.outputBlockingNodesID = new HashSet<>();
         this.physicalEdgesInOrder = new ArrayList<>();
         this.serializationExecutor = Preconditions.checkNotNull(serializationExecutor);
         this.chainInfos = new HashMap<>();
@@ -675,6 +679,11 @@ public class StreamingJobGraphGenerator {
 
             StreamNode currentNode = streamGraph.getStreamNode(currentNodeId);
 
+            boolean currentNodeIsOutputOnEOF = currentNode.isOutputOnEOF();
+            if (currentNodeIsOutputOnEOF) {
+                outputBlockingNodesID.add(currentNodeId);
+            }
+
             for (StreamEdge outEdge : currentNode.getOutEdges()) {
                 if (isChainable(outEdge, streamGraph)) {
                     chainableOutputs.add(outEdge);
@@ -684,6 +693,10 @@ public class StreamingJobGraphGenerator {
             }
 
             for (StreamEdge chainable : chainableOutputs) {
+                // transfer outputBlocking to downstream nodes in the same chain
+                if (currentNodeIsOutputOnEOF) {
+                    outputBlockingNodesID.add(chainable.getTargetId());
+                }
                 transitiveOutEdges.addAll(
                         createChain(
                                 chainable.getTargetId(),
@@ -701,6 +714,16 @@ public class StreamingJobGraphGenerator {
                                 nonChainable.getTargetId(),
                                 (k) -> chainInfo.newChain(nonChainable.getTargetId())),
                         chainEntryPoints);
+            }
+
+            if (!outputBlockingNodesID.contains(currentNodeId)) {
+                for (StreamEdge edge : currentNode.getOutEdges()) {
+                    // transfer outputBlocking from all of downstream nodes
+                    if (outputBlockingNodesID.contains(edge.getTargetId())) {
+                        outputBlockingNodesID.add(currentNodeId);
+                        break;
+                    }
+                }
             }
 
             chainedNames.put(
@@ -1115,7 +1138,12 @@ public class StreamingJobGraphGenerator {
         config.setSavepointDir(streamGraph.getSavepointDirectory());
         config.setGraphContainingLoops(streamGraph.isIterative());
         config.setTimerServiceProvider(streamGraph.getTimerServiceProvider());
-        config.setCheckpointingEnabled(checkpointCfg.isCheckpointingEnabled());
+        if (outputBlockingNodesID.contains(vertexId)) {
+            // the output blocking vertex should disable checkpoint.
+            config.setCheckpointingEnabled(false);
+        } else {
+            config.setCheckpointingEnabled(checkpointCfg.isCheckpointingEnabled());
+        }
         config.getConfiguration()
                 .set(
                         ExecutionCheckpointingOptions.ENABLE_CHECKPOINTS_AFTER_TASKS_FINISH,
@@ -1472,15 +1500,35 @@ public class StreamingJobGraphGenerator {
             case HYBRID_SELECTIVE:
                 return ResultPartitionType.HYBRID_SELECTIVE;
             case UNDEFINED:
-                return determineUndefinedResultPartitionType(edge.getPartitioner());
+                return determineUndefinedResultPartitionType(edge);
             default:
                 throw new UnsupportedOperationException(
                         "Data exchange mode " + edge.getExchangeMode() + " is not supported yet.");
         }
     }
 
-    private ResultPartitionType determineUndefinedResultPartitionType(
-            StreamPartitioner<?> partitioner) {
+    private ResultPartitionType determineUndefinedResultPartitionType(StreamEdge edge) {
+        if (outputBlockingNodesID.contains(edge.getSourceId())) {
+            // use corresponding partition type if the upstream node outputs EOF
+            edge.setBufferTimeout(ExecutionOptions.DISABLED_NETWORK_BUFFER_TIMEOUT);
+            if (!outputBlockingNodesID.contains(edge.getTargetId())) {
+                return ResultPartitionType.BLOCKING;
+            }
+            switch (streamGraph.getOutputEOFPartExchangeMode()) {
+                case ALL_EDGES_BLOCKING:
+                    return ResultPartitionType.BLOCKING;
+                case ALL_EDGES_HYBRID_FULL:
+                    return ResultPartitionType.HYBRID_FULL;
+                case ALL_EDGES_HYBRID_SELECTIVE:
+                    return ResultPartitionType.HYBRID_SELECTIVE;
+                default:
+                    throw new RuntimeException(
+                            "Unrecognized batch subgraph data exchange mode "
+                                    + streamGraph.getGlobalStreamExchangeMode());
+            }
+        }
+
+        StreamPartitioner<?> partitioner = edge.getPartitioner();
         switch (streamGraph.getGlobalStreamExchangeMode()) {
             case ALL_EDGES_BLOCKING:
                 return ResultPartitionType.BLOCKING;
@@ -1701,7 +1749,7 @@ public class StreamingJobGraphGenerator {
     }
 
     private void validateHybridShuffleExecuteInBatchMode() {
-        if (hasHybridResultPartition) {
+        if (hasHybridResultPartition && outputBlockingNodesID.isEmpty()) {
             checkState(
                     jobGraph.getJobType() == JobType.BATCH,
                     "hybrid shuffle mode only supports batch job, please set %s to %s",

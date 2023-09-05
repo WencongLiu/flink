@@ -37,6 +37,7 @@ import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
 import org.apache.flink.streaming.api.functions.windowing.ReduceApplyProcessWindowFunction;
 import org.apache.flink.streaming.api.functions.windowing.ReduceApplyWindowFunction;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
+import org.apache.flink.streaming.api.windowing.assigners.EndOfStreamWindows;
 import org.apache.flink.streaming.api.windowing.assigners.MergingWindowAssigner;
 import org.apache.flink.streaming.api.windowing.assigners.WindowAssigner;
 import org.apache.flink.streaming.api.windowing.evictors.Evictor;
@@ -345,5 +346,11 @@ public class WindowOperatorBuilder<T, K, W extends Window> {
     @VisibleForTesting
     public long getAllowedLateness() {
         return allowedLateness;
+    }
+
+    public boolean canApplyEndOfStreamOperator() {
+        return windowAssigner instanceof EndOfStreamWindows
+                && trigger instanceof EndOfStreamWindows.EndOfStreamTrigger
+                && evictor == null;
     }
 }
