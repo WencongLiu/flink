@@ -402,7 +402,9 @@ public class StreamGraphGenerator {
         }
         setBatchStateBackendAndTimerService(graph);
 
-        graph.setGlobalStreamExchangeMode(deriveGlobalStreamExchangeModeBatch());
+        GlobalStreamExchangeMode globalStreamExchangeMode = deriveGlobalStreamExchangeModeBatch();
+        graph.setGlobalStreamExchangeMode(globalStreamExchangeMode);
+        graph.setOutputEOFPartExchangeMode(globalStreamExchangeMode);
         graph.setAllVerticesInSameSlotSharingGroupByDefault(false);
     }
 
@@ -415,6 +417,9 @@ public class StreamGraphGenerator {
         graph.setCheckpointStorage(checkpointStorage);
         graph.setSavepointDirectory(savepointDir);
         graph.setGlobalStreamExchangeMode(deriveGlobalStreamExchangeModeStreaming());
+
+        // an optimization configuration for some output on EOF situation in STREAMING mode
+        graph.setOutputEOFPartExchangeMode(deriveGlobalStreamExchangeModeBatch());
     }
 
     private String deriveJobName(String defaultJobName) {
@@ -435,7 +440,8 @@ public class StreamGraphGenerator {
             default:
                 throw new IllegalArgumentException(
                         String.format(
-                                "Unsupported shuffle mode '%s' in BATCH runtime mode.",
+                                "Unsupported shuffle mode '%s' in BATCH runtime mode"
+                                        + "or BATCH part of STREAMING runtime mode.",
                                 shuffleMode.toString()));
         }
     }

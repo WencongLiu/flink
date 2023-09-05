@@ -112,6 +112,8 @@ public class StreamGraph implements Pipeline {
 
     private GlobalStreamExchangeMode globalExchangeMode;
 
+    private GlobalStreamExchangeMode outputEOFPartExchangeMode;
+
     private boolean enableCheckpointsAfterTasksFinish;
 
     /** Flag to indicate whether to put all vertices into the same slot sharing group by default. */
@@ -266,6 +268,14 @@ public class StreamGraph implements Pipeline {
 
     public void setGlobalStreamExchangeMode(GlobalStreamExchangeMode globalExchangeMode) {
         this.globalExchangeMode = globalExchangeMode;
+    }
+
+    public GlobalStreamExchangeMode getOutputEOFPartExchangeMode() {
+        return outputEOFPartExchangeMode;
+    }
+
+    public void setOutputEOFPartExchangeMode(GlobalStreamExchangeMode outputEOFPartExchangeMode) {
+        this.outputEOFPartExchangeMode = outputEOFPartExchangeMode;
     }
 
     public void setSlotSharingGroupResource(

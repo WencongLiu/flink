@@ -26,6 +26,7 @@ import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
+import org.apache.flink.api.common.functions.RichCoGroupFunction;
 import org.apache.flink.api.common.io.InputFormat;
 import org.apache.flink.api.common.io.OutputFormat;
 import org.apache.flink.api.common.operators.MailboxExecutor;
@@ -80,9 +81,11 @@ import org.apache.flink.streaming.api.datastream.IterativeStream;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.ProcessFunction;
+import org.apache.flink.streaming.api.functions.co.CoProcessFunction;
+import org.apache.flink.streaming.api.functions.sink.DiscardingSink;
 import org.apache.flink.streaming.api.functions.sink.PrintSink;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
-import org.apache.flink.streaming.api.functions.sink.v2.DiscardingSink;
 import org.apache.flink.streaming.api.functions.source.InputFormatSourceFunction;
 import org.apache.flink.streaming.api.functions.source.ParallelSourceFunction;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
@@ -91,6 +94,9 @@ import org.apache.flink.streaming.api.operators.ChainingStrategy;
 import org.apache.flink.streaming.api.operators.CoordinatedOperatorFactory;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperatorFactory;
+import org.apache.flink.streaming.api.operators.OperatorAttributes;
+import org.apache.flink.streaming.api.operators.OperatorAttributesBuilder;
+import org.apache.flink.streaming.api.operators.ProcessOperator;
 import org.apache.flink.streaming.api.operators.SimpleOperatorFactory;
 import org.apache.flink.streaming.api.operators.SourceOperatorFactory;
 import org.apache.flink.streaming.api.operators.StreamMap;
@@ -103,6 +109,7 @@ import org.apache.flink.streaming.api.transformations.MultipleInputTransformatio
 import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.streaming.api.transformations.StreamExchangeMode;
+import org.apache.flink.streaming.api.windowing.assigners.EndOfStreamWindows;
 import org.apache.flink.streaming.runtime.partitioner.BroadcastPartitioner;
 import org.apache.flink.streaming.runtime.partitioner.ForwardPartitioner;
 import org.apache.flink.streaming.runtime.partitioner.RebalancePartitioner;
@@ -736,7 +743,7 @@ class StreamingJobGraphGeneratorTest {
                         new MockSource(Boundedness.BOUNDED, 1),
                         WatermarkStrategy.noWatermarks(),
                         "TestSource");
-        source.sinkTo(new DiscardingSink<>());
+        source.addSink(new DiscardingSink<>());
 
         StreamGraph streamGraph = env.getStreamGraph();
         JobGraph jobGraph = StreamingJobGraphGenerator.createJobGraph(streamGraph);
@@ -963,7 +970,7 @@ class StreamingJobGraphGeneratorTest {
     @Test
     void testStreamingJobTypeByDefault() {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.fromElements("test").sinkTo(new DiscardingSink<>());
+        env.fromElements("test").addSink(new DiscardingSink<>());
         JobGraph jobGraph = StreamingJobGraphGenerator.createJobGraph(env.getStreamGraph());
         assertThat(jobGraph.getJobType()).isEqualTo(JobType.STREAMING);
     }
@@ -972,7 +979,7 @@ class StreamingJobGraphGeneratorTest {
     void testBatchJobType() {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.setRuntimeMode(RuntimeExecutionMode.BATCH);
-        env.fromElements("test").sinkTo(new DiscardingSink<>());
+        env.fromElements("test").addSink(new DiscardingSink<>());
         JobGraph jobGraph = StreamingJobGraphGenerator.createJobGraph(env.getStreamGraph());
         assertThat(jobGraph.getJobType()).isEqualTo(JobType.BATCH);
     }
@@ -994,7 +1001,7 @@ class StreamingJobGraphGeneratorTest {
                 .map(value -> value)
                 .keyBy(value -> value)
                 .map(value -> value)
-                .sinkTo(new DiscardingSink<>());
+                .addSink(new DiscardingSink<>());
 
         JobGraph jobGraph = StreamingJobGraphGenerator.createJobGraph(env.getStreamGraph());
         List<JobVertex> verticesSorted = jobGraph.getVerticesSortedTopologicallyFromSources();
@@ -1008,6 +1015,172 @@ class StreamingJobGraphGeneratorTest {
                 verticesSorted.get(3) /* keyBy */, ResultPartitionType.BLOCKING);
         assertHasOutputPartitionType(
                 verticesSorted.get(4) /* forward - sink */, ResultPartitionType.BLOCKING);
+    }
+
+    @Test
+    void testOverwriteOperatorAttributesPartitionTypes() {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setRuntimeMode(RuntimeExecutionMode.STREAMING);
+        env.setParallelism(1);
+        env.disableOperatorChaining();
+        DataStream<Integer> source1 = env.fromElements(1);
+        DataStream<Integer> source2 = env.fromElements(1);
+        ProcessFunction<Integer, Integer> processFunction =
+                new ProcessFunction<Integer, Integer>() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public void processElement(
+                            Integer value,
+                            ProcessFunction<Integer, Integer>.Context ctx,
+                            Collector<Integer> out)
+                            throws Exception {}
+                };
+        source1.transform(
+                        "Process1",
+                        BasicTypeInfo.INT_TYPE_INFO,
+                        new TestOutputEOFProcessOperator<>(env.clean(processFunction)))
+                .connect(source2)
+                .process(
+                        new CoProcessFunction<Integer, Integer, Integer>() {
+                            @Override
+                            public void processElement1(
+                                    Integer value, Context ctx, Collector<Integer> out)
+                                    throws Exception {}
+
+                            @Override
+                            public void processElement2(
+                                    Integer value, Context ctx, Collector<Integer> out)
+                                    throws Exception {}
+                        })
+                .addSink(new DiscardingSink());
+
+        JobGraph jobGraph = StreamingJobGraphGenerator.createJobGraph(env.getStreamGraph());
+        List<JobVertex> verticesSorted = jobGraph.getVerticesSortedTopologicallyFromSources();
+        assertHasOutputPartitionType(
+                verticesSorted.get(0) /* source1 -> process */, ResultPartitionType.BLOCKING);
+        assertHasOutputPartitionType(
+                verticesSorted.get(1) /* source2 -> coProcess */,
+                ResultPartitionType.PIPELINED_BOUNDED);
+        assertHasOutputPartitionType(
+                verticesSorted.get(2) /* process -> coProcess */, ResultPartitionType.BLOCKING);
+        assertHasOutputPartitionType(
+                verticesSorted.get(3) /* coProcess -> process */,
+                ResultPartitionType.PIPELINED_BOUNDED);
+    }
+
+    @Test
+    void testChainedPartitionTypesInEndOfStreamWindows() {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setRuntimeMode(RuntimeExecutionMode.STREAMING);
+        env.setParallelism(1);
+        DataStream<Tuple2<Integer, String>> data1 =
+                env.fromElements(
+                        new Tuple2<>(1, "hello"), new Tuple2<>(2, "what's"), new Tuple2<>(2, "up"));
+        DataStream<Tuple2<Integer, String>> data2 =
+                env.fromElements(
+                        new Tuple2<>(1, "not"), new Tuple2<>(1, "much"), new Tuple2<>(2, "really"));
+        DataStream<Integer> dataStream =
+                data1.map(
+                                new MapFunction<
+                                        Tuple2<Integer, String>, Tuple2<Integer, String>>() {
+                                    @Override
+                                    public Tuple2<Integer, String> map(
+                                            Tuple2<Integer, String> value) throws Exception {
+                                        return value;
+                                    }
+                                })
+                        .coGroup(data2)
+                        .where(tuple -> tuple.f0)
+                        .equalTo(tuple -> tuple.f0)
+                        .window(EndOfStreamWindows.get())
+                        .apply(new CustomCoGroupFunction());
+        DataStream<Integer> partitionAfterCoGroupDataStream =
+                new DataStream<>(
+                        env,
+                        new PartitionTransformation<>(
+                                dataStream.getTransformation(), new RebalancePartitioner<>()));
+        DataStream<Integer> mappedDataStream = partitionAfterCoGroupDataStream.map(value -> value);
+        DataStream<Integer> partitionAfterMapDataStream =
+                new DataStream<>(
+                        env,
+                        new PartitionTransformation<>(
+                                mappedDataStream.getTransformation(),
+                                new RebalancePartitioner<>()));
+        partitionAfterMapDataStream.addSink(new DiscardingSink<>());
+
+        JobGraph jobGraph = StreamingJobGraphGenerator.createJobGraph(env.getStreamGraph());
+        List<JobVertex> verticesSorted = jobGraph.getVerticesSortedTopologicallyFromSources();
+        assertHasOutputPartitionType(
+                verticesSorted.get(0) /* source1 - coGroup */, ResultPartitionType.BLOCKING);
+        assertHasOutputPartitionType(
+                verticesSorted.get(1) /* source2 - coGroup */, ResultPartitionType.BLOCKING);
+        assertHasOutputPartitionType(
+                verticesSorted.get(2) /* coGroup - map */, ResultPartitionType.BLOCKING);
+        assertHasOutputPartitionType(
+                verticesSorted.get(3) /* map - sink */, ResultPartitionType.PIPELINED_BOUNDED);
+    }
+
+    @Test
+    void testPartitionTypesInEndOfStreamWindows() {
+        // OutputBlocking will be transferred from outputEOF node to the downstream nodes in the
+        // same chain and all of its upstream nodes.
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setRuntimeMode(RuntimeExecutionMode.STREAMING);
+        env.setParallelism(1);
+        env.disableOperatorChaining();
+        DataStream<Tuple2<Integer, String>> data1 =
+                env.fromElements(
+                        new Tuple2<>(1, "hello"), new Tuple2<>(2, "what's"), new Tuple2<>(2, "up"));
+        DataStream<Tuple2<Integer, String>> data2 =
+                env.fromElements(
+                        new Tuple2<>(1, "not"), new Tuple2<>(1, "much"), new Tuple2<>(2, "really"));
+        data1.map(
+                        new MapFunction<Tuple2<Integer, String>, Tuple2<Integer, String>>() {
+                            @Override
+                            public Tuple2<Integer, String> map(Tuple2<Integer, String> value)
+                                    throws Exception {
+                                return value;
+                            }
+                        })
+                .coGroup(data2)
+                .where(tuple -> tuple.f0)
+                .equalTo(tuple -> tuple.f0)
+                .window(EndOfStreamWindows.get())
+                .apply(new CustomCoGroupFunction())
+                .map(value -> value)
+                .keyBy(value -> value)
+                .addSink(new DiscardingSink<>());
+
+        JobGraph jobGraph = StreamingJobGraphGenerator.createJobGraph(env.getStreamGraph());
+        List<JobVertex> verticesSorted = jobGraph.getVerticesSortedTopologicallyFromSources();
+        assertHasOutputPartitionType(
+                verticesSorted.get(0) /* source - forward */, ResultPartitionType.BLOCKING);
+        assertHasOutputPartitionType(
+                verticesSorted.get(1) /* source - forward */, ResultPartitionType.BLOCKING);
+        assertHasOutputPartitionType(verticesSorted.get(2) /* map */, ResultPartitionType.BLOCKING);
+        assertHasOutputPartitionType(
+                verticesSorted.get(3) /* CoGroup */, ResultPartitionType.BLOCKING);
+        assertHasOutputPartitionType(
+                verticesSorted.get(4) /* Map */, ResultPartitionType.PIPELINED_BOUNDED);
+    }
+
+    private static class CustomCoGroupFunction
+            extends RichCoGroupFunction<Tuple2<Integer, String>, Tuple2<Integer, String>, Integer> {
+        @Override
+        public void coGroup(
+                Iterable<Tuple2<Integer, String>> iterableA,
+                Iterable<Tuple2<Integer, String>> iterableB,
+                Collector<Integer> collector) {
+            int sum = 0;
+            for (Tuple2<Integer, String> next : iterableA) {
+                sum += next.f0;
+            }
+            for (Tuple2<Integer, String> next : iterableB) {
+                sum += next.f0;
+            }
+            collector.collect(sum);
+        }
     }
 
     private void assertHasOutputPartitionType(
@@ -1170,7 +1343,7 @@ class StreamingJobGraphGeneratorTest {
                 .map((x) -> x)
                 .transform("test", BasicTypeInfo.INT_TYPE_INFO, new YieldingTestOperatorFactory<>())
                 .map((x) -> x)
-                .sinkTo(new DiscardingSink<>());
+                .addSink(new DiscardingSink<>());
 
         final JobGraph jobGraph = chainEnv.getStreamGraph().getJobGraph();
 
@@ -1226,7 +1399,7 @@ class StreamingJobGraphGeneratorTest {
                 .map((x) -> x)
                 .transform(
                         "test", BasicTypeInfo.LONG_TYPE_INFO, new YieldingTestOperatorFactory<>())
-                .sinkTo(new DiscardingSink<>());
+                .addSink(new DiscardingSink<>());
 
         final JobGraph jobGraph = chainEnv.getStreamGraph().getJobGraph();
 
@@ -1269,7 +1442,7 @@ class StreamingJobGraphGeneratorTest {
                 .union(createSource(env, 2))
                 .union(createSource(env, 3))
                 .union(createSource(env, 4))
-                .sinkTo(new DiscardingSink<>());
+                .addSink(new DiscardingSink<>());
 
         return StreamingJobGraphGenerator.createJobGraph(env.getStreamGraph());
     }
@@ -1491,10 +1664,49 @@ class StreamingJobGraphGeneratorTest {
                                 source.getTransformation(),
                                 new RebalancePartitioner<>(),
                                 StreamExchangeMode.HYBRID_FULL));
-        partitioned.sinkTo(new DiscardingSink<>());
+        partitioned.addSink(new DiscardingSink<>());
         StreamGraph streamGraph = env.getStreamGraph();
         assertThatThrownBy(() -> StreamingJobGraphGenerator.createJobGraph(streamGraph))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void testHybridShuffleModeInOutputEOFStreamingMode() {
+        Configuration configuration = new Configuration();
+        // set all edge to HYBRID_FULL result partition type.
+        configuration.set(
+                ExecutionOptions.BATCH_SHUFFLE_MODE, BatchShuffleMode.ALL_EXCHANGES_HYBRID_FULL);
+        configuration.set(ExecutionOptions.RUNTIME_MODE, RuntimeExecutionMode.STREAMING);
+        StreamExecutionEnvironment env =
+                StreamExecutionEnvironment.getExecutionEnvironment(configuration);
+        env.disableOperatorChaining();
+        DataStream<Integer> source = env.fromElements(1);
+        ProcessFunction<Integer, Integer> processFunction =
+                new ProcessFunction<Integer, Integer>() {
+                    private static final long serialVersionUID = 1L;
+
+                    @Override
+                    public void processElement(
+                            Integer value,
+                            ProcessFunction<Integer, Integer>.Context ctx,
+                            Collector<Integer> out)
+                            throws Exception {}
+                };
+        source.transform(
+                        "Process1",
+                        BasicTypeInfo.INT_TYPE_INFO,
+                        new TestOutputEOFProcessOperator<>(env.clean(processFunction)))
+                .map((MapFunction<Integer, Integer>) value -> value)
+                .addSink(new DiscardingSink());
+
+        JobGraph jobGraph = StreamingJobGraphGenerator.createJobGraph(env.getStreamGraph());
+        List<JobVertex> verticesSorted = jobGraph.getVerticesSortedTopologicallyFromSources();
+        assertHasOutputPartitionType(
+                verticesSorted.get(0) /* source1 -> process */, ResultPartitionType.HYBRID_FULL);
+        assertHasOutputPartitionType(
+                verticesSorted.get(1) /* process -> map */, ResultPartitionType.BLOCKING);
+        assertHasOutputPartitionType(
+                verticesSorted.get(2) /* map -> sink */, ResultPartitionType.PIPELINED_BOUNDED);
     }
 
     @Test
@@ -1666,8 +1878,8 @@ class StreamingJobGraphGeneratorTest {
                 .isEqualTo("mit [Source: source-1, Source: source-2, Source: source-3]\n");
 
         JobVertex sinkVertex = iterator.next();
-        assertThat(sinkVertex.getName()).isEqualTo("sink: Writer");
-        assertThat(sinkVertex.getOperatorPrettyName()).isEqualTo("sink: Writer\n");
+        assertThat(sinkVertex.getName()).isEqualTo("Sink: sink");
+        assertThat(sinkVertex.getOperatorPrettyName()).isEqualTo("Sink: sink\n");
     }
 
     @Test
@@ -1694,8 +1906,8 @@ class StreamingJobGraphGeneratorTest {
         assertThat(multipleVertex.getOperatorPrettyName()).isEqualTo("mit\n");
 
         JobVertex sinkVertex = iterator.next();
-        assertThat(sinkVertex.getName()).isEqualTo("sink: Writer");
-        assertThat(sinkVertex.getOperatorPrettyName()).isEqualTo("sink: Writer\n");
+        assertThat(sinkVertex.getName()).isEqualTo("Sink: sink");
+        assertThat(sinkVertex.getOperatorPrettyName()).isEqualTo("Sink: sink\n");
     }
 
     public JobGraph createGraphWithMultipleInputs(
@@ -1718,7 +1930,7 @@ class StreamingJobGraphGeneratorTest {
 
         DataStream<Long> dataStream = new DataStream<>(env, transform);
         // do not chain with sink operator.
-        dataStream.rebalance().sinkTo(new DiscardingSink<>()).name(sinkName);
+        dataStream.rebalance().addSink(new DiscardingSink<>()).name(sinkName);
 
         env.addOperator(transform);
 
@@ -1883,7 +2095,7 @@ class StreamingJobGraphGeneratorTest {
                                 isSelective
                                         ? StreamExchangeMode.HYBRID_SELECTIVE
                                         : StreamExchangeMode.HYBRID_FULL));
-        partitionAfterSourceDataStream.sinkTo(new DiscardingSink<>());
+        partitionAfterSourceDataStream.addSink(new DiscardingSink<>());
 
         JobGraph jobGraph = StreamingJobGraphGenerator.createJobGraph(env.getStreamGraph());
 
@@ -1944,18 +2156,18 @@ class StreamingJobGraphGeneratorTest {
                                 new ForwardPartitioner<>(),
                                 StreamExchangeMode.HYBRID_FULL));
         // these two vertices can reuse the same intermediate dataset
-        partition1.sinkTo(new DiscardingSink<>()).setParallelism(2).name("sink1");
-        partition2.sinkTo(new DiscardingSink<>()).setParallelism(2).name("sink2");
+        partition1.addSink(new DiscardingSink<>()).setParallelism(2).name("sink1");
+        partition2.addSink(new DiscardingSink<>()).setParallelism(2).name("sink2");
 
         // this can not reuse the same intermediate dataset because of different parallelism
-        partition3.sinkTo(new DiscardingSink<>()).setParallelism(3);
+        partition3.addSink(new DiscardingSink<>()).setParallelism(3);
 
         // this can not reuse the same intermediate dataset because of different partitioner
-        partition4.sinkTo(new DiscardingSink<>()).setParallelism(2);
+        partition4.addSink(new DiscardingSink<>()).setParallelism(2);
 
         // this can not reuse the same intermediate dataset because of different result partition
         // type
-        partition5.sinkTo(new DiscardingSink<>()).setParallelism(2);
+        partition5.addSink(new DiscardingSink<>()).setParallelism(2);
 
         SingleOutputStreamOperator<Integer> mapStream =
                 partition7.map(value -> value).setParallelism(1);
@@ -1966,7 +2178,7 @@ class StreamingJobGraphGeneratorTest {
                                 mapStream.getTransformation(),
                                 new RescalePartitioner<>(),
                                 StreamExchangeMode.HYBRID_FULL));
-        mapPartition.sinkTo(new DiscardingSink<>()).name("sink3");
+        mapPartition.addSink(new DiscardingSink<>()).name("sink3");
 
         StreamGraph streamGraph = env.getStreamGraph();
         JobGraph jobGraph = StreamingJobGraphGenerator.createJobGraph(streamGraph);
@@ -2016,25 +2228,25 @@ class StreamingJobGraphGeneratorTest {
         DataStream<Integer> source = env.fromElements(0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
 
         // these two vertices can reuse the same intermediate dataset
-        source.rebalance().sinkTo(new DiscardingSink<>()).setParallelism(2).name("sink1");
-        source.rebalance().sinkTo(new DiscardingSink<>()).setParallelism(2).name("sink2");
+        source.rebalance().addSink(new DiscardingSink<>()).setParallelism(2).name("sink1");
+        source.rebalance().addSink(new DiscardingSink<>()).setParallelism(2).name("sink2");
 
         // this can not reuse the same intermediate dataset because of different parallelism
-        source.rebalance().sinkTo(new DiscardingSink<>()).setParallelism(3);
+        source.rebalance().addSink(new DiscardingSink<>()).setParallelism(3);
 
         // this can not reuse the same intermediate dataset because of different partitioner
-        source.broadcast().sinkTo(new DiscardingSink<>()).setParallelism(2);
+        source.broadcast().addSink(new DiscardingSink<>()).setParallelism(2);
 
         // these two vertices can not reuse the same intermediate dataset because of the pipelined
         // edge
-        source.forward().sinkTo(new DiscardingSink<>()).setParallelism(1).disableChaining();
-        source.forward().sinkTo(new DiscardingSink<>()).setParallelism(1).disableChaining();
+        source.forward().addSink(new DiscardingSink<>()).setParallelism(1).disableChaining();
+        source.forward().addSink(new DiscardingSink<>()).setParallelism(1).disableChaining();
 
         DataStream<Integer> mapStream = source.forward().map(value -> value).setParallelism(1);
 
         // these two vertices can reuse the same intermediate dataset
-        mapStream.broadcast().sinkTo(new DiscardingSink<>()).setParallelism(2).name("sink3");
-        mapStream.broadcast().sinkTo(new DiscardingSink<>()).setParallelism(2).name("sink4");
+        mapStream.broadcast().addSink(new DiscardingSink<>()).setParallelism(2).name("sink3");
+        mapStream.broadcast().addSink(new DiscardingSink<>()).setParallelism(2).name("sink4");
 
         StreamGraph streamGraph = env.getStreamGraph();
         streamGraph.setGlobalStreamExchangeMode(GlobalStreamExchangeMode.FORWARD_EDGES_PIPELINED);
@@ -2650,6 +2862,18 @@ class StreamingJobGraphGeneratorTest {
         @Override
         public Set<AbstractID> listCompletedClusterDatasets() {
             return new HashSet<>(completedClusterDatasetIds);
+        }
+    }
+
+    private static class TestOutputEOFProcessOperator<IN, OUT> extends ProcessOperator<IN, OUT> {
+        public TestOutputEOFProcessOperator(ProcessFunction<IN, OUT> function) {
+            super(function);
+            chainingStrategy = ChainingStrategy.ALWAYS;
+        }
+
+        @Override
+        public OperatorAttributes getOperatorAttributes() {
+            return new OperatorAttributesBuilder().setOutputOnEOF(true).build();
         }
     }
 }
