@@ -87,7 +87,7 @@ public abstract class Keys<T> {
         private final List<FlatFieldDescriptor> keyFields;
         private final TypeInformation<?>[] originalKeyTypes;
 
-        public SelectorFunctionKeys(
+        public /**/SelectorFunctionKeys(
                 KeySelector<T, K> keyExtractor,
                 TypeInformation<T> inputType,
                 TypeInformation<K> keyType) {

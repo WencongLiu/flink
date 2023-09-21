@@ -35,6 +35,7 @@ import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.io.OutputFormat;
 import org.apache.flink.api.common.operators.Keys;
+import org.apache.flink.api.common.operators.Order;
 import org.apache.flink.api.common.operators.ResourceSpec;
 import org.apache.flink.api.common.serialization.SerializationSchema;
 import org.apache.flink.api.common.state.MapStateDescriptor;
@@ -77,6 +78,7 @@ import org.apache.flink.streaming.api.operators.collect.CollectResultIterator;
 import org.apache.flink.streaming.api.operators.collect.CollectSinkOperator;
 import org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory;
 import org.apache.flink.streaming.api.operators.collect.CollectStreamSink;
+import org.apache.flink.streaming.api.operators.SortPartitionOperator;
 import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.streaming.api.transformations.TimestampsAndWatermarksTransformation;
@@ -1437,6 +1439,63 @@ public class DataStream<T> {
 
         env.registerCollectIterator(iterator);
         collector.setIterator(iterator);
+    }
+
+    // --------------------------------------------------------------------------------------------
+    //  Sorting
+    // --------------------------------------------------------------------------------------------
+
+    /**
+     * Locally sorts the partitions of the DataStream on the specified field in the specified order.
+     * DataStream can be sorted on multiple fields by chaining sortPartition() calls.
+     *
+     * @param field The field index on which the DataStream is sorted.
+     * @param order The order in which the DataStream is sorted.
+     * @return The DataStream with sorted local partitions.
+     */
+    public SingleOutputStreamOperator<T> sortPartition(int field, Order order) {
+        SortPartitionOperator<T> operator =
+                new SortPartitionOperator<>(getType(), field, order);
+        final String opName = "SortPartition";
+        this.setConnectionType(new ForwardPartitioner<>());
+        return this.transform(opName, getType(), operator);
+    }
+
+    /**
+     * Locally sorts the partitions of the DataSet on the specified field in the specified order.
+     * DataSet can be sorted on multiple fields by chaining sortPartition() calls.
+     *
+     * @param field The field expression referring to the field on which the DataSet is sorted.
+     * @param order The order in which the DataSet is sorted.
+     * @return The DataSet with sorted local partitions.
+     */
+    public SingleOutputStreamOperator<T> sortPartition(String field, Order order) {
+        SortPartitionOperator<T> operator =
+                new SortPartitionOperator<>(getType(), field, order);
+        final String opName = "SortPartition";
+        this.setConnectionType(new ForwardPartitioner<>());
+        return this.transform(opName, getType(), operator);
+    }
+
+    /**
+     * Locally sorts the partitions of the DataSet on the extracted key in the specified order. The
+     * DataSet can be sorted on multiple values by returning a tuple from the KeySelector.
+     *
+     * <p>Note that no additional sort keys can be appended to a KeySelector sort keys. To sort the
+     * partitions by multiple values using KeySelector, the KeySelector must return a tuple
+     * consisting of the values.
+     *
+     * @param keySelector The KeySelector function which extracts the key values from the DataSet
+     *     on which the DataSet is sorted.
+     * @param order The order in which the DataSet is sorted.
+     * @return The DataSet with sorted local partitions.
+     */
+    public <K> SingleOutputStreamOperator<T> sortPartition(KeySelector<T, K> keySelector, Order order) {
+        SortPartitionOperator<T> operator =
+                new SortPartitionOperator<>(getType(), clean(keySelector), order);
+        final String opName = "SortPartition";
+        this.setConnectionType(new ForwardPartitioner<>());
+        return this.transform(opName, getType(), operator);
     }
 
     /**

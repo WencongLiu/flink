@@ -42,6 +42,7 @@ import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.co.KeyedCoProcessFunction;
+import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.api.functions.sink.v2.DiscardingSink;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperatorFactory;
@@ -508,7 +509,7 @@ public class StreamGraphGeneratorBatchExecutionTest extends TestLogger {
                                 "InternalSorterAndOutputOnEOFOperator",
                                 BasicTypeInfo.INT_TYPE_INFO,
                                 internalSortOperator);
-        DataStreamSink<Integer> sink = process.addSink(new DiscardingSink<>());
+        DataStreamSink<Integer> sink = process.addSink((SinkFunction<Integer>) new DiscardingSink<>());
         StreamGraph streamGraph = getStreamGraphInBatchMode(sink);
         StreamNode operatorNode = streamGraph.getStreamNode(process.getId());
         assertThat(operatorNode.getInputRequirements().size(), equalTo(2));

@@ -20,10 +20,12 @@ package org.apache.flink.streaming.api.operators.sort;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeutils.TypeComparator;
 import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.typeutils.InputTypeConfigurable;
 import org.apache.flink.configuration.AlgorithmOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.memory.DataOutputSerializer;
@@ -54,7 +56,7 @@ import org.apache.flink.util.MutableObjectIterator;
 @Internal
 public class EOFAggregationOperator<IN, KEY, ACC, OUT>
         extends AbstractUdfStreamOperator<OUT, AggregateFunction<IN, ACC, OUT>>
-        implements OneInputStreamOperator<IN, OUT>, BoundedOneInput {
+        implements OneInputStreamOperator<IN, OUT>, BoundedOneInput, InputTypeConfigurable {
 
     private PushSorter<Tuple2<byte[], StreamRecord<IN>>> sorter;
     TypeSerializer<Tuple2<byte[], StreamRecord<IN>>> keyAndValueSerializer;
@@ -63,6 +65,7 @@ public class EOFAggregationOperator<IN, KEY, ACC, OUT>
     private TypeSerializer<KEY> keySerializer;
     private DataOutputSerializer dataOutputSerializer;
     private long lastWatermarkTimestamp = Long.MIN_VALUE;
+    private TypeInformation<IN> inputRecordType;
 
     public EOFAggregationOperator(AggregateFunction<IN, ACC, OUT> userFunction) {
         super(userFunction);
@@ -181,5 +184,10 @@ public class EOFAggregationOperator<IN, KEY, ACC, OUT>
                 .setOutputOnEOF(true)
                 .setInternalSorterSupported(true)
                 .build();
+    }
+
+    @Override
+    public void setInputType(TypeInformation<?> type, ExecutionConfig executionConfig) {
+        inputRecordType = (TypeInformation<IN>) type;
     }
 }
