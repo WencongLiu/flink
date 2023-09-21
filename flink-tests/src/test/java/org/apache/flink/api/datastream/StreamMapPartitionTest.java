@@ -20,25 +20,21 @@ package org.apache.flink.api.datastream;
 
 import org.apache.flink.api.common.RuntimeExecutionMode;
 import org.apache.flink.api.common.functions.RichMapFunction;
-import org.apache.flink.api.common.operators.Order;
-import org.apache.flink.api.java.functions.KeySelector;
+import org.apache.flink.api.common.functions.RichMapPartitionFunction;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.contrib.streaming.state.EmbeddedRocksDBStateBackend;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.windowing.AllWindowFunction;
-import org.apache.flink.streaming.api.windowing.assigners.EndOfStreamWindows;
-import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
 
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Random;
 
 /** */
-public class StreamMapPartitionKeySelectorTest {
+public class StreamMapPartitionTest {
     public static void main(String[] args) throws Exception {
         StreamExecutionEnvironment executionEnvironment =
                 StreamExecutionEnvironment.getExecutionEnvironment();
@@ -47,63 +43,41 @@ public class StreamMapPartitionKeySelectorTest {
         DataStreamSource<String> source =
                 executionEnvironment.fromCollection(new OneThousandSource(), String.class);
         source.setParallelism(1);
-        SingleOutputStreamOperator<MyFriend> mapStream =
-                source.rescale()
+        SingleOutputStreamOperator<Tuple2<String, Integer>> mapStream =
+                source.rebalance()
                         .map(
-                                new RichMapFunction<String, MyFriend>() {
+                                new RichMapFunction<String, Tuple2<String, Integer>>() {
                                     @Override
-                                    public MyFriend map(String string) {
-                                        return new MyFriend(Integer.parseInt(string));
+                                    public Tuple2<String, Integer> map(String string) {
+                                        return Tuple2.of(
+                                                String.valueOf(
+                                                        getRuntimeContext()
+                                                                .getIndexOfThisSubtask()),
+                                                Integer.valueOf(string));
                                     }
                                 });
-        mapStream.setParallelism(1);
-        SingleOutputStreamOperator<MyFriend> singleOutputStreamOperator =
-                mapStream.sortPartition(
-                        new KeySelector<MyFriend, Integer>() {
-                            @Override
-                            public Integer getKey(MyFriend value) throws Exception {
-                                return value.getAge();
-                            }
-                        },
-                        Order.ASCENDING);
-        SingleOutputStreamOperator<MyFriend> resultStream =
-                singleOutputStreamOperator.setParallelism(1);
-        resultStream
-                .windowAll(EndOfStreamWindows.get())
-                .apply(
-                        new AllWindowFunction<MyFriend, String, TimeWindow>() {
-                            @Override
-                            public void apply(
-                                    TimeWindow window,
-                                    Iterable<MyFriend> values,
-                                    Collector<String> out)
-                                    throws Exception {
-                                StringBuilder stringBuilder = new StringBuilder();
-                                for (MyFriend value : values) {
-                                    stringBuilder.append(value.getAge()).append(", ");
-                                }
-                                System.out.println(stringBuilder);
-                            }
-                        });
+        mapStream.setParallelism(10);
+        SingleOutputStreamOperator<String> resultStream = mapStream.mapPartition(
+                new RichMapPartitionFunction<Tuple2<String, Integer>, String>() {
+                    @Override
+                    public void mapPartition(
+                            Iterable<Tuple2<String, Integer>> values,
+                            Collector<String> out) throws Exception {
+                        StringBuilder builder = new StringBuilder();
+                        builder
+                                .append("Current Subtask ID: ")
+                                .append(getRuntimeContext().getIndexOfThisSubtask());
+                        for (Tuple2<String, Integer> value : values) {
+                            builder.append(" From Subtask ID: ");
+                            builder.append(value.f0);
+                            builder.append(" Value: ");
+                            builder.append(value.f1);
+                        }
+                        System.out.println(builder);
+                    }
+                });
+        resultStream.setParallelism(10);
         executionEnvironment.execute();
-    }
-
-    public static class MyFriend {
-        Integer age;
-
-        public MyFriend() {}
-
-        public MyFriend(Integer age) {
-            this.age = age + 10;
-        }
-
-        public Integer getAge() {
-            return age;
-        }
-
-        public void setAge(Integer age) {
-            this.age = age;
-        }
     }
 
     static class OneThousandSource implements Iterator<String>, Serializable {
@@ -114,7 +88,7 @@ public class StreamMapPartitionKeySelectorTest {
 
         public OneThousandSource() {
             for (int index = 0; index < 20; ++index) {
-                allElements.add(new Random().nextInt(20));
+                allElements.add(index);
             }
         }
 

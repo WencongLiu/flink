@@ -29,6 +29,7 @@ import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.functions.MapPartitionFunction;
 import org.apache.flink.api.common.functions.Partitioner;
 import org.apache.flink.api.common.functions.RichFilterFunction;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
@@ -65,6 +66,7 @@ import org.apache.flink.streaming.api.functions.sink.OutputFormatSinkFunction;
 import org.apache.flink.streaming.api.functions.sink.PrintSinkFunction;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.api.functions.sink.SocketClientSink;
+import org.apache.flink.streaming.api.operators.MapPartitionOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperatorFactory;
 import org.apache.flink.streaming.api.operators.ProcessOperator;
@@ -1454,8 +1456,7 @@ public class DataStream<T> {
      * @return The DataStream with sorted local partitions.
      */
     public SingleOutputStreamOperator<T> sortPartition(int field, Order order) {
-        SortPartitionOperator<T> operator =
-                new SortPartitionOperator<>(getType(), field, order);
+        SortPartitionOperator<T> operator = new SortPartitionOperator<>(getType(), field, order);
         final String opName = "SortPartition";
         this.setConnectionType(new ForwardPartitioner<>());
         return this.transform(opName, getType(), operator);
@@ -1470,8 +1471,7 @@ public class DataStream<T> {
      * @return The DataSet with sorted local partitions.
      */
     public SingleOutputStreamOperator<T> sortPartition(String field, Order order) {
-        SortPartitionOperator<T> operator =
-                new SortPartitionOperator<>(getType(), field, order);
+        SortPartitionOperator<T> operator = new SortPartitionOperator<>(getType(), field, order);
         final String opName = "SortPartition";
         this.setConnectionType(new ForwardPartitioner<>());
         return this.transform(opName, getType(), operator);
@@ -1485,17 +1485,43 @@ public class DataStream<T> {
      * partitions by multiple values using KeySelector, the KeySelector must return a tuple
      * consisting of the values.
      *
-     * @param keySelector The KeySelector function which extracts the key values from the DataSet
-     *     on which the DataSet is sorted.
+     * @param keySelector The KeySelector function which extracts the key values from the DataSet on
+     *     which the DataSet is sorted.
      * @param order The order in which the DataSet is sorted.
      * @return The DataSet with sorted local partitions.
      */
-    public <K> SingleOutputStreamOperator<T> sortPartition(KeySelector<T, K> keySelector, Order order) {
+    public <K> SingleOutputStreamOperator<T> sortPartition(
+            KeySelector<T, K> keySelector, Order order) {
         SortPartitionOperator<T> operator =
                 new SortPartitionOperator<>(getType(), clean(keySelector), order);
         final String opName = "SortPartition";
         this.setConnectionType(new ForwardPartitioner<>());
         return this.transform(opName, getType(), operator);
+    }
+
+    /**
+     * Applies a Map-style operation to the entire partition of the data. The function is called
+     * once per parallel partition of the data, and the entire partition is available through the
+     * given Iterator. The number of elements that each instance of the MapPartition function sees
+     * is non deterministic and depends on the parallelism of the operation.
+     *
+     * <p>This function is intended for operations that cannot transform individual elements,
+     * requires no grouping of elements. To transform individual elements, the use of {@code map()}
+     * and {@code flatMap()} is preferable.
+     */
+    public <R> SingleOutputStreamOperator<R> mapPartition(
+            MapPartitionFunction<T, R> mapPartitionFunction) {
+        if (mapPartitionFunction == null) {
+            throw new NullPointerException("MapPartition function must not be null.");
+        }
+        mapPartitionFunction = getExecutionEnvironment().clean(mapPartitionFunction);
+        String opName = "MapPartition";
+        TypeInformation<R> resultType =
+                TypeExtractor.getMapPartitionReturnTypes(
+                        mapPartitionFunction, getType(), opName, true);
+        this.setConnectionType(new ForwardPartitioner<>());
+        return this.transform(
+                opName, resultType, new MapPartitionOperator<>(getType(), mapPartitionFunction));
     }
 
     /**
