@@ -57,6 +57,7 @@ import org.apache.flink.configuration.AkkaOptions;
 import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.core.fs.FileSystem.WriteMode;
 import org.apache.flink.core.fs.Path;
+import org.apache.flink.core.memory.ManagedMemoryUseCase;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
@@ -71,6 +72,7 @@ import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperatorFactory;
 import org.apache.flink.streaming.api.operators.ProcessOperator;
 import org.apache.flink.streaming.api.operators.SimpleOperatorFactory;
+import org.apache.flink.streaming.api.operators.SortPartitionOperator;
 import org.apache.flink.streaming.api.operators.StreamFilter;
 import org.apache.flink.streaming.api.operators.StreamFlatMap;
 import org.apache.flink.streaming.api.operators.StreamMap;
@@ -80,7 +82,6 @@ import org.apache.flink.streaming.api.operators.collect.CollectResultIterator;
 import org.apache.flink.streaming.api.operators.collect.CollectSinkOperator;
 import org.apache.flink.streaming.api.operators.collect.CollectSinkOperatorFactory;
 import org.apache.flink.streaming.api.operators.collect.CollectStreamSink;
-import org.apache.flink.streaming.api.operators.SortPartitionOperator;
 import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.streaming.api.transformations.TimestampsAndWatermarksTransformation;
@@ -115,6 +116,7 @@ import org.apache.flink.util.Preconditions;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -1520,8 +1522,25 @@ public class DataStream<T> {
                 TypeExtractor.getMapPartitionReturnTypes(
                         mapPartitionFunction, getType(), opName, true);
         this.setConnectionType(new ForwardPartitioner<>());
-        return this.transform(
+        SingleOutputStreamOperator<R> resultStream = this.transform(
                 opName, resultType, new MapPartitionOperator<>(getType(), mapPartitionFunction));
+        setManagedMemoryWeight(resultStream, 100);
+        return resultStream;
+    }
+
+    private static <T> void setManagedMemoryWeight(DataStream<T> dataStream, long memoryBytes) {
+        if (memoryBytes > 0) {
+            final int weightInMebibyte = Math.max(1, (int) (memoryBytes >> 20));
+            final Optional<Integer> previousWeight =
+                    dataStream
+                            .getTransformation()
+                            .declareManagedMemoryUseCaseAtOperatorScope(
+                                    ManagedMemoryUseCase.OPERATOR, weightInMebibyte);
+            if (previousWeight.isPresent()) {
+                throw new RuntimeException(
+                        "Managed memory weight has been set, this should not happen.");
+            }
+        }
     }
 
     /**

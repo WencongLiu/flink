@@ -22,6 +22,11 @@ import org.apache.flink.api.common.functions.InvalidTypesException;
 import org.apache.flink.api.common.functions.MapPartitionFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.typeutils.MissingTypeInfo;
+import org.apache.flink.core.memory.ManagedMemoryUseCase;
+import org.apache.flink.core.memory.MemorySegment;
+import org.apache.flink.runtime.io.disk.iomanager.IOManager;
+import org.apache.flink.runtime.memory.MemoryAllocationException;
+import org.apache.flink.runtime.memory.MemoryManager;
 import org.apache.flink.streaming.api.graph.StreamConfig;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
@@ -56,6 +61,23 @@ public class MapPartitionOperator<IN, OUT>
             StreamConfig config,
             Output<StreamRecord<OUT>> output) {
         super.setup(containingTask, config, output);
+        ClassLoader userCodeClassLoader = containingTask.getUserCodeClassLoader();
+        double managedMemoryFraction =
+                config.getManagedMemoryFractionOperatorUseCaseOfSlot(
+                        ManagedMemoryUseCase.OPERATOR,
+                        containingTask.getEnvironment().getTaskConfiguration(),
+                        userCodeClassLoader);
+        MemoryManager memoryManager = containingTask.getEnvironment().getMemoryManager();
+        IOManager ioManager = containingTask.getEnvironment().getIOManager();
+        List<MemorySegment> memory;
+        try {
+            memory =
+                    memoryManager.allocatePages(
+                            this, memoryManager.computeNumberOfPages(managedMemoryFraction));
+        } catch (MemoryAllocationException e) {
+            throw new RuntimeException(e);
+        }
+        System.out.println();
     }
 
     @Override
