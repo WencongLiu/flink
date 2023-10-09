@@ -29,7 +29,6 @@ import org.apache.flink.util.function.SupplierWithException;
 
 import java.io.IOException;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
@@ -85,31 +84,28 @@ public class RecordCache<T> {
         }
     }
 
+    public Iterable<T> getRecordIterator() throws Exception {
+        List<Segment> segments = recordCacheWriter.getSegments();
+        return () -> new RecordIterator<>(recordSerializer, segments);
+    }
+
+    public void addRecord(T t) throws Exception {
+        recordCacheWriter.addRecord(t);
+    }
+
     private SupplierWithException<Path, IOException> createDataCacheFileGenerator(
             Path basePath, OperatorID operatorId) {
         return () ->
                 new Path(
                         String.format(
                                 "%s/%s-%s-%s",
-                                basePath.toString(),
-                                "cache",
-                                operatorId,
-                                UUID.randomUUID()));
+                                basePath.toString(), "cache", operatorId, UUID.randomUUID()));
     }
 
-    public static Path getDataCachePath(String[] localSpillPaths) {
+    private static Path getDataCachePath(String[] localSpillPaths) {
         Random random = new Random();
         final String localSpillPath = localSpillPaths[random.nextInt(localSpillPaths.length)];
         String pathStr = Paths.get(localSpillPath).toUri().toString();
         return new Path(pathStr);
-    }
-
-    public Iterable<T> getRecordIterator() throws Exception {
-        List<Segment> segments = recordCacheWriter.getSegments();
-        return () -> new RecordCacheReader<>(recordSerializer, segments);
-    }
-
-    public void addRecord(T t) throws Exception {
-        recordCacheWriter.addRecord(t);
     }
 }

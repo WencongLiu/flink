@@ -19,15 +19,15 @@
 package org.apache.flink.streaming.api.operators.mappartition;
 
 import org.apache.flink.api.common.typeutils.TypeSerializer;
-import org.apache.flink.api.java.tuple.Tuple2;
 
 import javax.annotation.Nullable;
+
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
 
 /** Reads the cached data from a list of segments. */
-public class RecordCacheReader<T> implements Iterator<T> {
+public class RecordIterator<T> implements Iterator<T> {
 
     /** The tool to deserialize bytes into records. */
     private final TypeSerializer<T> serializer;
@@ -38,26 +38,14 @@ public class RecordCacheReader<T> implements Iterator<T> {
     /** The current reader for next records. */
     @Nullable private SegmentReader<T> currentSegmentReader;
 
-    /** The index of the segment that current reader reads from. */
-    private int currentSegmentIndex;
-
-    /** The number of records that have been read through the current reader so far. */
-    private int currentSegmentCount;
-
-    public RecordCacheReader(TypeSerializer<T> serializer, List<Segment> segments) {
-        this(serializer, segments, Tuple2.of(0, 0));
-    }
-
-    public RecordCacheReader(
-            TypeSerializer<T> serializer,
-            List<Segment> segments,
-            Tuple2<Integer, Integer> readerPosition) {
+    public RecordIterator(TypeSerializer<T> serializer, List<Segment> segments) {
         this.serializer = serializer;
         this.segments = segments;
-        this.currentSegmentIndex = readerPosition.f0;
-        this.currentSegmentCount = readerPosition.f1;
-
-        createSegmentReader(readerPosition.f0, readerPosition.f1);
+        try {
+            this.currentSegmentReader = new MemorySegmentReader<>(serializer, segments.get(0), 0);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -69,39 +57,15 @@ public class RecordCacheReader<T> implements Iterator<T> {
     public T next() {
         try {
             T record = currentSegmentReader.next();
-
-            currentSegmentCount++;
             if (!currentSegmentReader.hasNext()) {
                 currentSegmentReader.close();
-                currentSegmentIndex++;
-                currentSegmentCount = 0;
-                createSegmentReader(currentSegmentIndex, currentSegmentCount);
+                if (segments.size() > 1) {
+                    currentSegmentReader = new FileSegmentReader<>(serializer, segments.get(1), 0);
+                } else {
+                    currentSegmentReader = null;
+                }
             }
-
             return record;
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public Tuple2<Integer, Integer> getPosition() {
-        return new Tuple2<>(currentSegmentIndex, currentSegmentCount);
-    }
-
-    private void createSegmentReader(int index, int startOffset) {
-        try {
-            if (index >= segments.size()) {
-                currentSegmentReader = null;
-                return;
-            }
-
-            Segment segment = segments.get(currentSegmentIndex);
-            if (!segment.getCache().isEmpty()) {
-                currentSegmentReader = new MemorySegmentReader<>(serializer, segment, startOffset);
-            } else {
-                currentSegmentReader = new FileSegmentReader<>(serializer, segment, startOffset);
-            }
-
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
