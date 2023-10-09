@@ -22,18 +22,11 @@ import org.apache.flink.api.common.functions.InvalidTypesException;
 import org.apache.flink.api.common.functions.MapPartitionFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.typeutils.MissingTypeInfo;
-import org.apache.flink.core.memory.ManagedMemoryUseCase;
-import org.apache.flink.core.memory.MemorySegment;
-import org.apache.flink.runtime.io.disk.iomanager.IOManager;
-import org.apache.flink.runtime.memory.MemoryAllocationException;
-import org.apache.flink.runtime.memory.MemoryManager;
 import org.apache.flink.streaming.api.graph.StreamConfig;
+import org.apache.flink.streaming.api.operators.mappartition.RecordCache;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.runtime.tasks.StreamTask;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /** The {@link MapPartitionOperator} is used to process all records in each partition. */
 public class MapPartitionOperator<IN, OUT>
@@ -42,11 +35,11 @@ public class MapPartitionOperator<IN, OUT>
 
     private final TypeInformation<IN> inputType;
 
-    private final List<IN> allRecords = new ArrayList<>();
-
     private final MapPartitionFunction<IN, OUT> function;
 
     private long lastWatermarkTimestamp = Long.MIN_VALUE;
+
+    private RecordCache<IN> recordCache;
 
     public MapPartitionOperator(
             TypeInformation<IN> inputType, MapPartitionFunction<IN, OUT> function) {
@@ -61,29 +54,18 @@ public class MapPartitionOperator<IN, OUT>
             StreamConfig config,
             Output<StreamRecord<OUT>> output) {
         super.setup(containingTask, config, output);
-        ClassLoader userCodeClassLoader = containingTask.getUserCodeClassLoader();
-        double managedMemoryFraction =
-                config.getManagedMemoryFractionOperatorUseCaseOfSlot(
-                        ManagedMemoryUseCase.OPERATOR,
-                        containingTask.getEnvironment().getTaskConfiguration(),
-                        userCodeClassLoader);
-        MemoryManager memoryManager = containingTask.getEnvironment().getMemoryManager();
-        IOManager ioManager = containingTask.getEnvironment().getIOManager();
-        List<MemorySegment> memory;
-        try {
-            memory =
-                    memoryManager.allocatePages(
-                            this, memoryManager.computeNumberOfPages(managedMemoryFraction));
-        } catch (MemoryAllocationException e) {
-            throw new RuntimeException(e);
-        }
-        System.out.println();
+        this.recordCache =
+                new RecordCache<IN>(
+                        inputType.createSerializer(getExecutionConfig()),
+                        containingTask,
+                        getRuntimeContext(),
+                        getOperatorID());
     }
 
     @Override
     public void endInput() throws Exception {
         TimestampedCollector<OUT> outputCollector = new TimestampedCollector<>(output);
-        function.mapPartition(allRecords, outputCollector);
+        function.mapPartition(recordCache.getRecordIterator(), outputCollector);
         Watermark watermark = new Watermark(lastWatermarkTimestamp);
         if (getTimeServiceManager().isPresent()) {
             getTimeServiceManager().get().advanceWatermark(watermark);
@@ -93,7 +75,7 @@ public class MapPartitionOperator<IN, OUT>
 
     @Override
     public void processElement(StreamRecord<IN> element) throws Exception {
-        allRecords.add(element.getValue());
+        recordCache.addRecord(element.getValue());
     }
 
     @Override
