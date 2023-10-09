@@ -1461,7 +1461,9 @@ public class DataStream<T> {
         SortPartitionOperator<T> operator = new SortPartitionOperator<>(getType(), field, order);
         final String opName = "SortPartition";
         this.setConnectionType(new ForwardPartitioner<>());
-        return this.transform(opName, getType(), operator);
+        SingleOutputStreamOperator<T> resultStream = this.transform(opName, getType(), operator);
+        setManagedMemoryWeight(resultStream, 100);
+        return resultStream;
     }
 
     /**
@@ -1476,7 +1478,9 @@ public class DataStream<T> {
         SortPartitionOperator<T> operator = new SortPartitionOperator<>(getType(), field, order);
         final String opName = "SortPartition";
         this.setConnectionType(new ForwardPartitioner<>());
-        return this.transform(opName, getType(), operator);
+        SingleOutputStreamOperator<T> resultStream = this.transform(opName, getType(), operator);
+        setManagedMemoryWeight(resultStream, 100);
+        return resultStream;
     }
 
     /**
@@ -1498,7 +1502,9 @@ public class DataStream<T> {
                 new SortPartitionOperator<>(getType(), clean(keySelector), order);
         final String opName = "SortPartition";
         this.setConnectionType(new ForwardPartitioner<>());
-        return this.transform(opName, getType(), operator);
+        SingleOutputStreamOperator<T> resultStream = this.transform(opName, getType(), operator);
+        setManagedMemoryWeight(resultStream, 100);
+        return resultStream;
     }
 
     /**

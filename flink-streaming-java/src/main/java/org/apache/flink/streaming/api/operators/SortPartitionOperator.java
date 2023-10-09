@@ -18,6 +18,7 @@
 
 package org.apache.flink.streaming.api.operators;
 
+import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.InvalidProgramException;
 import org.apache.flink.api.common.functions.InvalidTypesException;
 import org.apache.flink.api.common.operators.Keys;
@@ -27,27 +28,31 @@ import org.apache.flink.api.common.typeinfo.AtomicType;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.common.typeutils.CompositeType;
 import org.apache.flink.api.common.typeutils.TypeComparator;
+import org.apache.flink.api.common.typeutils.TypeSerializer;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.operators.KeyFunctions;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.MissingTypeInfo;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
+import org.apache.flink.configuration.AlgorithmOptions;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.core.memory.ManagedMemoryUseCase;
+import org.apache.flink.runtime.io.disk.iomanager.IOManager;
+import org.apache.flink.runtime.memory.MemoryAllocationException;
+import org.apache.flink.runtime.memory.MemoryManager;
+import org.apache.flink.runtime.operators.sort.ExternalSorter;
+import org.apache.flink.runtime.operators.sort.PushSorter;
 import org.apache.flink.streaming.api.graph.StreamConfig;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.runtime.tasks.StreamTask;
-
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+import org.apache.flink.util.MutableObjectIterator;
 
 /** The {@link SortPartitionOperator} is used to sort partitions. */
 public class SortPartitionOperator<T> extends AbstractStreamOperator<T>
         implements OneInputStreamOperator<T, T>, BoundedOneInput {
 
     private final TypeInformation<T> inputType;
-
-    private final List<T> allRecords = new ArrayList<>();
 
     private final Order sortOrder;
 
@@ -59,9 +64,7 @@ public class SortPartitionOperator<T> extends AbstractStreamOperator<T>
 
     private long lastWatermarkTimestamp = Long.MIN_VALUE;
 
-    private Ordering orderInformation;
-
-    private TypeComparator<T> sortComparator;
+    private PushSorter<T> sorter;
 
     public SortPartitionOperator(
             TypeInformation<T> inputType, int sortPositionField, Order sortOrder) {
@@ -73,8 +76,7 @@ public class SortPartitionOperator<T> extends AbstractStreamOperator<T>
         this.sortOrder = sortOrder;
     }
 
-    public SortPartitionOperator(
-            TypeInformation<T> inputType, String sortField, Order sortOrder) {
+    public SortPartitionOperator(TypeInformation<T> inputType, String sortField, Order sortOrder) {
         this.inputType = checkInputType(inputType);
         ensureSortableKey(sortField);
         this.sortPositionField = -1;
@@ -97,36 +99,65 @@ public class SortPartitionOperator<T> extends AbstractStreamOperator<T>
     public void setup(
             StreamTask<?, ?> containingTask, StreamConfig config, Output<StreamRecord<T>> output) {
         super.setup(containingTask, config, output);
-        // Initialize the order information.
-        this.orderInformation = getOrderInformation();
-        // Initialize the sort comparator.
-        this.sortComparator = getSortComparator();
+        // Initialize the sort comparator
+        TypeComparator<T> sortComparator = getSortComparator();
+
+        // Initialize the external sorter.
+        ExecutionConfig executionConfig = containingTask.getEnvironment().getExecutionConfig();
+        TypeSerializer<T> inputSerializer = this.inputType.createSerializer(executionConfig);
+        ClassLoader userCodeClassLoader = containingTask.getUserCodeClassLoader();
+        MemoryManager memoryManager = containingTask.getEnvironment().getMemoryManager();
+        IOManager ioManager = containingTask.getEnvironment().getIOManager();
+        double managedMemoryFraction =
+                config.getManagedMemoryFractionOperatorUseCaseOfSlot(
+                        ManagedMemoryUseCase.OPERATOR,
+                        containingTask.getEnvironment().getTaskConfiguration(),
+                        userCodeClassLoader);
+        Configuration jobConfiguration = containingTask.getEnvironment().getJobConfiguration();
+        try {
+            sorter =
+                    ExternalSorter.newBuilder(
+                                    memoryManager,
+                                    containingTask,
+                                    inputSerializer,
+                                    sortComparator,
+                                    executionConfig)
+                            .memoryFraction(managedMemoryFraction)
+                            .enableSpilling(
+                                    ioManager,
+                                    jobConfiguration.get(AlgorithmOptions.SORT_SPILLING_THRESHOLD))
+                            .maxNumFileHandles(
+                                    jobConfiguration.get(AlgorithmOptions.SPILLING_MAX_FAN))
+                            .objectReuse(executionConfig.isObjectReuseEnabled())
+                            .largeRecords(
+                                    jobConfiguration.get(
+                                            AlgorithmOptions.USE_LARGE_RECORDS_HANDLER))
+                            .build();
+        } catch (MemoryAllocationException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
     public void endInput() throws Exception {
+        sorter.finishReading();
+        MutableObjectIterator<T> dataIterator = sorter.getIterator();
         TimestampedCollector<T> outputCollector = new TimestampedCollector<>(output);
-        allRecords.sort(
-                new Comparator<T>() {
-                    @Override
-                    public int compare(T o1, T o2) {
-                        return sortComparator.compare(o1, o2);
-                    }
-                });
-        for (T record : allRecords) {
+        T record = dataIterator.next();
+        while (record != null) {
             outputCollector.collect(record);
+            record = dataIterator.next();
         }
-
         Watermark watermark = new Watermark(lastWatermarkTimestamp);
         if (getTimeServiceManager().isPresent()) {
             getTimeServiceManager().get().advanceWatermark(watermark);
         }
-        outputCollector.emitWatermark(watermark);
+        output.emitWatermark(watermark);
     }
 
     @Override
     public void processElement(StreamRecord<T> element) throws Exception {
-        allRecords.add(element.getValue());
+        sorter.writeRecord(element.getValue());
     }
 
     @Override
@@ -146,8 +177,9 @@ public class SortPartitionOperator<T> extends AbstractStreamOperator<T>
     }
 
     private TypeComparator<T> getSortComparator() {
-        int[] sortColumns = this.orderInformation.getFieldPositions();
-        boolean[] sortOrderings = this.orderInformation.getFieldSortDirections();
+        Ordering orderInformation = getOrderInformation();
+        int[] sortColumns = orderInformation.getFieldPositions();
+        boolean[] sortOrderings = orderInformation.getFieldSortDirections();
         if (inputType instanceof CompositeType) {
             return ((CompositeType<T>) inputType)
                     .createComparator(sortColumns, sortOrderings, 0, getExecutionConfig());
