@@ -41,7 +41,7 @@ public class RecordCache<T> {
     private final TypeSerializer<T> recordSerializer;
 
     /** The data cache writer for the received records. */
-    private final DataCacheWriter<T> dataCacheWriter;
+    private final RecordCacheWriter<T> recordCacheWriter;
 
     public RecordCache(
             TypeSerializer<T> recordSerializer,
@@ -73,15 +73,13 @@ public class RecordCache<T> {
                                 .getEnvironment()
                                 .getIOManager()
                                 .getSpillingDirectoriesPaths());
-        List<Segment> priorFinishedSegments = new ArrayList<>();
         try {
-            this.dataCacheWriter =
-                    new DataCacheWriter<>(
+            this.recordCacheWriter =
+                    new RecordCacheWriter<>(
                             recordSerializer,
                             basePath.getFileSystem(),
                             createDataCacheFileGenerator(basePath, operatorID),
-                            segmentPool,
-                            priorFinishedSegments);
+                            segmentPool);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -107,11 +105,11 @@ public class RecordCache<T> {
     }
 
     public Iterable<T> getRecordIterator() throws Exception {
-        List<Segment> segments = dataCacheWriter.getSegments();
-        return () -> new DataCacheReader<>(recordSerializer, segments);
+        List<Segment> segments = recordCacheWriter.getSegments();
+        return () -> new RecordCacheReader<>(recordSerializer, segments);
     }
 
     public void addRecord(T t) throws Exception {
-        dataCacheWriter.addRecord(t);
+        recordCacheWriter.addRecord(t);
     }
 }

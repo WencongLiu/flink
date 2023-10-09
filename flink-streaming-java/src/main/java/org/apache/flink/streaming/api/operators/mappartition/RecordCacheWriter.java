@@ -26,13 +26,13 @@ import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.function.SupplierWithException;
 
 import javax.annotation.Nullable;
+
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /** Records the data received and replayed them when required. */
-public class DataCacheWriter<T> {
+public class RecordCacheWriter<T> {
 
     /** A soft limit on the max allowed size of a single segment. */
     static final long MAX_SEGMENT_SIZE = 1L << 30; // 1GB
@@ -55,44 +55,17 @@ public class DataCacheWriter<T> {
     /** The current writer for new records. */
     @Nullable private SegmentWriter<T> currentSegmentWriter;
 
-    public DataCacheWriter(
-            TypeSerializer<T> serializer,
-            FileSystem fileSystem,
-            SupplierWithException<Path, IOException> pathGenerator)
-            throws IOException {
-        this(serializer, fileSystem, pathGenerator, null, Collections.emptyList());
-    }
-
-    public DataCacheWriter(
+    public RecordCacheWriter(
             TypeSerializer<T> serializer,
             FileSystem fileSystem,
             SupplierWithException<Path, IOException> pathGenerator,
-            MemorySegmentPool segmentPool)
-            throws IOException {
-        this(serializer, fileSystem, pathGenerator, segmentPool, Collections.emptyList());
-    }
-
-    public DataCacheWriter(
-            TypeSerializer<T> serializer,
-            FileSystem fileSystem,
-            SupplierWithException<Path, IOException> pathGenerator,
-            List<Segment> priorFinishedSegments)
-            throws IOException {
-        this(serializer, fileSystem, pathGenerator, null, priorFinishedSegments);
-    }
-
-    public DataCacheWriter(
-            TypeSerializer<T> serializer,
-            FileSystem fileSystem,
-            SupplierWithException<Path, IOException> pathGenerator,
-            @Nullable MemorySegmentPool segmentPool,
-            List<Segment> priorFinishedSegments)
+            @Nullable MemorySegmentPool segmentPool)
             throws IOException {
         this.fileSystem = fileSystem;
         this.pathGenerator = pathGenerator;
         this.segmentPool = segmentPool;
         this.serializer = serializer;
-        this.finishedSegments = new ArrayList<>(priorFinishedSegments);
+        this.finishedSegments = new ArrayList<>();
         this.currentSegmentWriter = createSegmentWriter();
     }
 
@@ -102,17 +75,6 @@ public class DataCacheWriter<T> {
             currentSegmentWriter = new FileSegmentWriter<>(serializer, pathGenerator.get());
             Preconditions.checkState(currentSegmentWriter.addRecord(record));
         }
-    }
-
-    /** Finishes adding records and closes resources occupied for adding records. */
-    public List<Segment> finish() throws IOException {
-        if (currentSegmentWriter == null) {
-            return finishedSegments;
-        }
-
-        currentSegmentWriter.finish().ifPresent(finishedSegments::add);
-        currentSegmentWriter = null;
-        return finishedSegments;
     }
 
     /**
@@ -145,23 +107,6 @@ public class DataCacheWriter<T> {
             }
         }
         finishedSegments.clear();
-    }
-
-    /** Write the segments in this writer to files on disk. */
-    public void writeSegmentsToFiles() throws IOException {
-        finishCurrentSegmentIfExists();
-        for (Segment segment : finishedSegments) {
-            if (segment.getFsSize() > 0) {
-                continue;
-            }
-
-            SegmentReader<T> reader = new MemorySegmentReader<>(serializer, segment, 0);
-            SegmentWriter<T> writer = new FileSegmentWriter<>(serializer, segment.getPath());
-            while (reader.hasNext()) {
-                writer.addRecord(reader.next());
-            }
-            segment.setFsSize(writer.finish().get().getFsSize());
-        }
     }
 
     private SegmentWriter<T> createSegmentWriter() throws IOException {

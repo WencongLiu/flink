@@ -27,7 +27,7 @@ import java.util.Iterator;
 import java.util.List;
 
 /** Reads the cached data from a list of segments. */
-public class DataCacheReader<T> implements Iterator<T> {
+public class RecordCacheReader<T> implements Iterator<T> {
 
     /** The tool to deserialize bytes into records. */
     private final TypeSerializer<T> serializer;
@@ -44,11 +44,11 @@ public class DataCacheReader<T> implements Iterator<T> {
     /** The number of records that have been read through the current reader so far. */
     private int currentSegmentCount;
 
-    public DataCacheReader(TypeSerializer<T> serializer, List<Segment> segments) {
+    public RecordCacheReader(TypeSerializer<T> serializer, List<Segment> segments) {
         this(serializer, segments, Tuple2.of(0, 0));
     }
 
-    public DataCacheReader(
+    public RecordCacheReader(
             TypeSerializer<T> serializer,
             List<Segment> segments,
             Tuple2<Integer, Integer> readerPosition) {

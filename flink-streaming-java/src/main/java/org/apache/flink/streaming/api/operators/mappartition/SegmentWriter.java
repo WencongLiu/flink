@@ -30,7 +30,7 @@ interface SegmentWriter<T> {
      * Adds a record to the writer.
      *
      * @return true if the record is successfully added, false if the size of the segment has
-     *     reached {@link DataCacheWriter#MAX_SEGMENT_SIZE} and cannot add current record.
+     *     reached {@link RecordCacheWriter#MAX_SEGMENT_SIZE} and cannot add current record.
      */
     boolean addRecord(T record) throws IOException;
 
