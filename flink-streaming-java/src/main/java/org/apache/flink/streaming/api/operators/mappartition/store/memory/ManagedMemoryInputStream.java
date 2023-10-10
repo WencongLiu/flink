@@ -19,8 +19,10 @@
 package org.apache.flink.streaming.api.operators.mappartition.store.memory;
 
 import org.apache.flink.core.memory.MemorySegment;
+import org.apache.flink.streaming.api.operators.mappartition.MemorySegmentPool;
 
 import java.io.InputStream;
+import java.util.Collections;
 import java.util.List;
 
 /** The input stream of managed memory. */
@@ -35,10 +37,14 @@ public class ManagedMemoryInputStream extends InputStream {
     /** The number of bytes that have been read from the current segment so far. */
     private int segmentOffset;
 
-    public ManagedMemoryInputStream(List<MemorySegment> segments) {
+    private MemorySegmentPool memorySegmentPool;
+
+    public ManagedMemoryInputStream(
+            List<MemorySegment> segments, MemorySegmentPool memorySegmentPool) {
         this.segments = segments;
         this.segmentIndex = 0;
         this.segmentOffset = 0;
+        this.memorySegmentPool = memorySegmentPool;
     }
 
     @Override
@@ -46,6 +52,7 @@ public class ManagedMemoryInputStream extends InputStream {
         int ret = segments.get(segmentIndex).get(segmentOffset) & 0xff;
         segmentOffset += 1;
         if (segmentOffset >= segments.get(segmentIndex).size()) {
+            memorySegmentPool.returnAll(Collections.singletonList(segments.get(segmentIndex)));
             segmentIndex++;
             segmentOffset = 0;
         }
@@ -61,6 +68,7 @@ public class ManagedMemoryInputStream extends InputStream {
             segments.get(segmentIndex).get(segmentOffset, b, off, currentLen);
             segmentOffset += currentLen;
             if (segmentOffset >= segments.get(segmentIndex).size()) {
+                memorySegmentPool.returnAll(Collections.singletonList(segments.get(segmentIndex)));
                 segmentIndex++;
                 segmentOffset = 0;
             }

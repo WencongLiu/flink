@@ -41,12 +41,15 @@ public class MemoryStore<T> implements Store<T> {
 
     private final DataOutputView outputView;
 
+    private final MemorySegmentPool memorySegmentPool;
+
     private int recordCount = 0;
 
-    public MemoryStore(TypeSerializer<T> recordSerializer, MemorySegmentPool segmentPool) {
+    public MemoryStore(TypeSerializer<T> recordSerializer, MemorySegmentPool memorySegmentPool) {
         this.recordSerializer = recordSerializer;
-        this.outputStream = new ManagedMemoryOutputStream(segmentPool);
+        this.outputStream = new ManagedMemoryOutputStream(memorySegmentPool);
         this.outputView = new DataOutputViewStreamWrapper(outputStream);
+        this.memorySegmentPool = memorySegmentPool;
     }
 
     public boolean addRecord(T record) throws IOException {
@@ -64,7 +67,7 @@ public class MemoryStore<T> implements Store<T> {
 
     public Iterator<T> getRecordIterator() {
         return new MemoryStoreIterator<T>(
-                recordCount, outputStream.getMemorySegments(), recordSerializer);
+                recordCount, outputStream.getMemorySegments(), recordSerializer, memorySegmentPool);
     }
 
     /**
@@ -82,10 +85,15 @@ public class MemoryStore<T> implements Store<T> {
         private int count;
 
         MemoryStoreIterator(
-                int totalCount, List<MemorySegment> segments, TypeSerializer<T> serializer) {
+                int totalCount,
+                List<MemorySegment> segments,
+                TypeSerializer<T> serializer,
+                MemorySegmentPool memorySegmentPool) {
             this.totalCount = totalCount;
             this.count = 0;
-            this.inputView = new DataInputViewStreamWrapper(new ManagedMemoryInputStream(segments));
+            this.inputView =
+                    new DataInputViewStreamWrapper(
+                            new ManagedMemoryInputStream(segments, memorySegmentPool));
             this.serializer = serializer;
         }
 
