@@ -30,6 +30,7 @@ import org.apache.flink.streaming.api.operators.mappartition.store.memory.Memory
 import org.apache.flink.streaming.runtime.tasks.StreamTask;
 
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.Random;
 import java.util.UUID;
 
@@ -38,6 +39,8 @@ public class RecordCache<T> {
 
     private final Store<T> memoryStore;
     private final Store<T> diskStore;
+
+    private boolean shouldWriteToMemory = true;
 
     public RecordCache(
             TypeSerializer<T> recordSerializer,
@@ -76,11 +79,19 @@ public class RecordCache<T> {
     }
 
     public Iterable<T> getRecordIterator() {
-        return () -> new RecordIterator<T>(memoryStore.getRecordIterator());
+        return () ->
+                new RecordIterator<T>(
+                        Arrays.asList(
+                                memoryStore.getRecordIterator(), diskStore.getRecordIterator()));
     }
 
     public void addRecord(T t) throws Exception {
-        memoryStore.addRecord(t);
+        diskStore.addRecord(t);
+        //if (shouldWriteToMemory) {
+        //    shouldWriteToMemory = memoryStore.addRecord(t);
+        //} else {
+        //    diskStore.addRecord(t);
+        //}
     }
 
     private Path getSpillPath(String[] localSpillPaths, OperatorID operatorId) {

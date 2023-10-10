@@ -61,6 +61,7 @@ public class DiskStore<T> implements Store<T> {
 
     public boolean addRecord(T record) throws IOException {
         recordSerializer.serialize(record, outputView);
+        outputStream.flush();
         recordCount++;
         return true;
     }
@@ -86,7 +87,7 @@ public class DiskStore<T> implements Store<T> {
         FileStoreIterator(int totalRecordCount, Path path, TypeSerializer<T> recordSerializer) {
             this.totalRecordCount = totalRecordCount;
             this.currentRecordIndex = 0;
-            BufferedInputStream bufferedInputStream = null;
+            BufferedInputStream bufferedInputStream;
             try {
                 bufferedInputStream = new BufferedInputStream(path.getFileSystem().open(path));
             } catch (IOException e) {

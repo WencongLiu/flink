@@ -19,23 +19,44 @@
 package org.apache.flink.streaming.api.operators.mappartition;
 
 import java.util.Iterator;
+import java.util.List;
 
 /** Reads the cached data from a list of segments. */
 public class RecordIterator<T> implements Iterator<T> {
 
-    private final Iterator<T> memoryIterator;
+    private final List<Iterator<T>> iteratorsList;
 
-    public RecordIterator(Iterator<T> memoryIterator) {
-        this.memoryIterator = memoryIterator;
+    private int iteratorIndex = 0;
+
+    public RecordIterator(List<Iterator<T>> iteratorsList) {
+        this.iteratorsList = iteratorsList;
     }
 
     @Override
     public boolean hasNext() {
-        return memoryIterator.hasNext();
+        if (iteratorIndex >= iteratorsList.size()) {
+            return false;
+        }
+        boolean hasNext = iteratorsList.get(iteratorIndex).hasNext();
+        if(hasNext){
+            return hasNext;
+        }else {
+            ++iteratorIndex;
+            return hasNext();
+        }
     }
 
     @Override
     public T next() {
-        return memoryIterator.next();
+        if (iteratorIndex >= iteratorsList.size()) {
+            return null;
+        }
+        Iterator<T> currentIterator = iteratorsList.get(iteratorIndex);
+        if(currentIterator.hasNext()){
+            return currentIterator.next();
+        }else {
+            ++iteratorIndex;
+            return next();
+        }
     }
 }
