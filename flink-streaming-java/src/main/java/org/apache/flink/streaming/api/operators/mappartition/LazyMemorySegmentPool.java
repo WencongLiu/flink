@@ -21,11 +21,9 @@ package org.apache.flink.streaming.api.operators.mappartition;
 import org.apache.flink.core.memory.MemorySegment;
 import org.apache.flink.runtime.memory.MemoryAllocationException;
 import org.apache.flink.runtime.memory.MemoryManager;
-import org.apache.flink.util.Preconditions;
 
 import java.io.Closeable;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /** {@link MemorySegmentPool} that lazy allocate memory pages from {@link MemoryManager}. */
@@ -65,10 +63,6 @@ public class LazyMemorySegmentPool implements MemorySegmentPool, Closeable {
         this.cachePages.addAll(memory);
     }
 
-    public void returnPage(MemorySegment segment) {
-        returnAll(Collections.singletonList(segment));
-    }
-
     @Override
     public MemorySegment nextSegment() {
         int freePages = freePages();
@@ -86,28 +80,6 @@ public class LazyMemorySegmentPool implements MemorySegmentPool, Closeable {
         }
         this.pageUsage++;
         return this.cachePages.remove(this.cachePages.size() - 1);
-    }
-
-    public List<MemorySegment> allocateSegments(int required) {
-        int freePages = freePages();
-        if (freePages < required) {
-            return null;
-        }
-
-        List<MemorySegment> ret = new ArrayList<>(required);
-        for (int i = 0; i < required; i++) {
-            MemorySegment segment;
-            try {
-                segment = nextSegment();
-                Preconditions.checkNotNull(segment);
-            } catch (Throwable t) {
-                // unexpected, we should first return all temporary segments
-                returnAll(ret);
-                throw t;
-            }
-            ret.add(segment);
-        }
-        return ret;
     }
 
     @Override
