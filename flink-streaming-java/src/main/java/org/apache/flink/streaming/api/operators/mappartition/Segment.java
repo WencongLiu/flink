@@ -86,7 +86,7 @@ public class Segment {
         return path;
     }
 
-    int getCount() {
+    public int getCount() {
         return count;
     }
 
@@ -94,7 +94,7 @@ public class Segment {
         return fsSize;
     }
 
-    List<MemorySegment> getCache() {
+    public List<MemorySegment> getCache() {
         return cache;
     }
 

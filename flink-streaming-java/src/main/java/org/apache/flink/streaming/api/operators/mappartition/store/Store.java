@@ -16,26 +16,15 @@
  * limitations under the License.
  */
 
-package org.apache.flink.streaming.api.operators.mappartition;
+package org.apache.flink.streaming.api.operators.mappartition.store;
 
+import java.io.IOException;
 import java.util.Iterator;
 
-/** Reads the cached data from a list of segments. */
-public class RecordIterator<T> implements Iterator<T> {
+/** The store is used to save records. */
+public interface Store<T> {
 
-    private final Iterator<T> memoryIterator;
+    boolean addRecord(T record) throws IOException;
 
-    public RecordIterator(Iterator<T> memoryIterator) {
-        this.memoryIterator = memoryIterator;
-    }
-
-    @Override
-    public boolean hasNext() {
-        return memoryIterator.hasNext();
-    }
-
-    @Override
-    public T next() {
-        return memoryIterator.next();
-    }
+    Iterator<T> getRecordIterator();
 }

@@ -24,30 +24,26 @@ import org.apache.flink.core.memory.ManagedMemoryUseCase;
 import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.runtime.memory.MemoryManager;
 import org.apache.flink.streaming.api.operators.StreamingRuntimeContext;
+import org.apache.flink.streaming.api.operators.mappartition.store.Store;
+import org.apache.flink.streaming.api.operators.mappartition.store.disk.DiskStore;
+import org.apache.flink.streaming.api.operators.mappartition.store.memory.MemoryStore;
 import org.apache.flink.streaming.runtime.tasks.StreamTask;
-import org.apache.flink.util.function.SupplierWithException;
 
-import java.io.IOException;
 import java.nio.file.Paths;
-import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 
 /** */
 public class RecordCache<T> {
 
-    /** The tool to serialize/deserialize records. */
-    private final TypeSerializer<T> recordSerializer;
-
-    /** The data cache writer for the received records. */
-    private final RecordCacheWriter<T> recordCacheWriter;
+    private final Store<T> memoryStore;
+    private final Store<T> diskStore;
 
     public RecordCache(
             TypeSerializer<T> recordSerializer,
             StreamTask<?, ?> containingTask,
             StreamingRuntimeContext runtimeContext,
             OperatorID operatorID) {
-        this.recordSerializer = recordSerializer;
 
         MemorySegmentPool segmentPool = null;
         double fraction =
@@ -65,47 +61,33 @@ public class RecordCache<T> {
                             memoryManager,
                             memoryManager.computeNumberOfPages(fraction));
         }
-
-        Path basePath =
-                getDataCachePath(
-                        containingTask
-                                .getEnvironment()
-                                .getIOManager()
-                                .getSpillingDirectoriesPaths());
-        try {
-            this.recordCacheWriter =
-                    new RecordCacheWriter<>(
-                            recordSerializer,
-                            basePath.getFileSystem(),
-                            createDataCacheFileGenerator(basePath, operatorID),
-                            segmentPool);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        // Initialize the memory store.
+        this.memoryStore = new MemoryStore<T>(recordSerializer, segmentPool);
+        // Initialize the disk store.
+        this.diskStore =
+                new DiskStore<T>(
+                        recordSerializer,
+                        getSpillPath(
+                                containingTask
+                                        .getEnvironment()
+                                        .getIOManager()
+                                        .getSpillingDirectoriesPaths(),
+                                operatorID));
     }
 
-    public Iterable<T> getRecordIterator() throws Exception {
-        List<Segment> segments = recordCacheWriter.getSegments();
-        return () -> new RecordIterator<>(recordSerializer, segments);
+    public Iterable<T> getRecordIterator() {
+        return () -> new RecordIterator<T>(memoryStore.getRecordIterator());
     }
 
     public void addRecord(T t) throws Exception {
-        recordCacheWriter.addRecord(t);
+        memoryStore.addRecord(t);
     }
 
-    private SupplierWithException<Path, IOException> createDataCacheFileGenerator(
-            Path basePath, OperatorID operatorId) {
-        return () ->
-                new Path(
-                        String.format(
-                                "%s/%s-%s-%s",
-                                basePath.toString(), "cache", operatorId, UUID.randomUUID()));
-    }
-
-    private static Path getDataCachePath(String[] localSpillPaths) {
+    private Path getSpillPath(String[] localSpillPaths, OperatorID operatorId) {
         Random random = new Random();
         final String localSpillPath = localSpillPaths[random.nextInt(localSpillPaths.length)];
         String pathStr = Paths.get(localSpillPath).toUri().toString();
-        return new Path(pathStr);
+        return new Path(
+                String.format("%s/%s-%s-%s", pathStr, "cache", operatorId, UUID.randomUUID()));
     }
 }
