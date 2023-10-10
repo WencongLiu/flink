@@ -57,44 +57,45 @@ public class StreamMapPartitionTest {
                                     }
                                 });
         mapStream.setParallelism(10);
-        SingleOutputStreamOperator<String> resultStream = mapStream.mapPartition(
-                new RichMapPartitionFunction<Tuple2<String, Integer>, String>() {
-                    @Override
-                    public void mapPartition(
-                            Iterable<Tuple2<String, Integer>> values,
-                            Collector<String> out) throws Exception {
-                        StringBuilder builder = new StringBuilder();
-                        builder
-                                .append("Current Subtask ID: ")
-                                .append(getRuntimeContext().getIndexOfThisSubtask());
-                        for (Tuple2<String, Integer> value : values) {
-                            builder.append(" From Subtask ID: ");
-                            builder.append(value.f0);
-                            builder.append(" Value: ");
-                            builder.append(value.f1);
-                        }
-                        System.out.println(builder);
-                    }
-                });
+        SingleOutputStreamOperator<String> resultStream =
+                mapStream.mapPartition(
+                        new RichMapPartitionFunction<Tuple2<String, Integer>, String>() {
+                            @Override
+                            public void mapPartition(
+                                    Iterable<Tuple2<String, Integer>> values,
+                                    Collector<String> out) {
+                                StringBuilder builder = new StringBuilder();
+                                builder.append("Current Subtask ID: ")
+                                        .append(getRuntimeContext().getIndexOfThisSubtask());
+                                int number = 0;
+                                for (Tuple2<String, Integer> value : values) {
+                                    ++number;
+                                }
+                                builder.append(" ").append(number).append(" records.");
+                                System.out.println(builder);
+                            }
+                        });
         resultStream.setParallelism(10);
         executionEnvironment.execute();
     }
 
     static class OneThousandSource implements Iterator<String>, Serializable {
 
+        private static final int TOTAL_NUMBER = 2000000;
+
         private int currentPosition = 0;
 
         private final List<Integer> allElements = new ArrayList<>();
 
         public OneThousandSource() {
-            for (int index = 0; index < 20; ++index) {
+            for (int index = 0; index < TOTAL_NUMBER; ++index) {
                 allElements.add(index);
             }
         }
 
         @Override
         public boolean hasNext() {
-            return currentPosition < 20;
+            return currentPosition < TOTAL_NUMBER;
         }
 
         @Override

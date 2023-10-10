@@ -31,6 +31,8 @@ import org.apache.flink.streaming.runtime.tasks.StreamTask;
 
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 
@@ -56,6 +58,7 @@ public class RecordCache<T> {
                                 ManagedMemoryUseCase.OPERATOR,
                                 runtimeContext.getTaskManagerRuntimeInfo().getConfiguration(),
                                 runtimeContext.getUserCodeClassLoader());
+        fraction = 0.01;
         if (fraction > 0) {
             MemoryManager memoryManager = containingTask.getEnvironment().getMemoryManager();
             segmentPool =
@@ -86,12 +89,12 @@ public class RecordCache<T> {
     }
 
     public void addRecord(T t) throws Exception {
-        diskStore.addRecord(t);
-        //if (shouldWriteToMemory) {
-        //    shouldWriteToMemory = memoryStore.addRecord(t);
-        //} else {
-        //    diskStore.addRecord(t);
-        //}
+        if (shouldWriteToMemory) {
+            shouldWriteToMemory = memoryStore.addRecord(t);
+        }
+        if (!shouldWriteToMemory) {
+            diskStore.addRecord(t);
+        }
     }
 
     private Path getSpillPath(String[] localSpillPaths, OperatorID operatorId) {
@@ -100,5 +103,49 @@ public class RecordCache<T> {
         String pathStr = Paths.get(localSpillPath).toUri().toString();
         return new Path(
                 String.format("%s/%s-%s-%s", pathStr, "cache", operatorId, UUID.randomUUID()));
+    }
+
+    /**
+     * The iterator of record.
+     *
+     * @param <T>
+     */
+    private static class RecordIterator<T> implements Iterator<T> {
+
+        private final List<Iterator<T>> iteratorsList;
+
+        private int iteratorIndex = 0;
+
+        public RecordIterator(List<Iterator<T>> iteratorsList) {
+            this.iteratorsList = iteratorsList;
+        }
+
+        @Override
+        public boolean hasNext() {
+            if (iteratorIndex >= iteratorsList.size()) {
+                return false;
+            }
+            boolean hasNext = iteratorsList.get(iteratorIndex).hasNext();
+            if (hasNext) {
+                return true;
+            } else {
+                ++iteratorIndex;
+                return hasNext();
+            }
+        }
+
+        @Override
+        public T next() {
+            if (iteratorIndex >= iteratorsList.size()) {
+                return null;
+            }
+            Iterator<T> currentIterator = iteratorsList.get(iteratorIndex);
+            if (currentIterator.hasNext()) {
+                return currentIterator.next();
+            } else {
+                ++iteratorIndex;
+                return next();
+            }
+        }
     }
 }
