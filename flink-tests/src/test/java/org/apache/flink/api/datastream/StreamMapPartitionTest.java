@@ -22,7 +22,6 @@ import org.apache.flink.api.common.RuntimeExecutionMode;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.common.functions.RichMapPartitionFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.contrib.streaming.state.EmbeddedRocksDBStateBackend;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -38,8 +37,8 @@ public class StreamMapPartitionTest {
     public static void main(String[] args) throws Exception {
         StreamExecutionEnvironment executionEnvironment =
                 StreamExecutionEnvironment.getExecutionEnvironment();
-        executionEnvironment.setRuntimeMode(RuntimeExecutionMode.STREAMING);
-        executionEnvironment.setStateBackend(new EmbeddedRocksDBStateBackend());
+        executionEnvironment.setRuntimeMode(RuntimeExecutionMode.BATCH);
+        //executionEnvironment.setStateBackend(new EmbeddedRocksDBStateBackend());
         DataStreamSource<String> source =
                 executionEnvironment.fromCollection(new OneThousandSource(), String.class);
         source.setParallelism(1);
@@ -81,7 +80,7 @@ public class StreamMapPartitionTest {
 
     static class OneThousandSource implements Iterator<String>, Serializable {
 
-        private static final int TOTAL_NUMBER = 2000000;
+        private static final int TOTAL_NUMBER = 1000000;
 
         private int currentPosition = 0;
 

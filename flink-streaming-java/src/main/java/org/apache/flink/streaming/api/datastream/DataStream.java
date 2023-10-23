@@ -67,7 +67,7 @@ import org.apache.flink.streaming.api.functions.sink.OutputFormatSinkFunction;
 import org.apache.flink.streaming.api.functions.sink.PrintSinkFunction;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
 import org.apache.flink.streaming.api.functions.sink.SocketClientSink;
-import org.apache.flink.streaming.api.operators.MapPartitionOperator;
+import org.apache.flink.streaming.api.operators.MapPartitionOperator2;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperatorFactory;
 import org.apache.flink.streaming.api.operators.ProcessOperator;
@@ -1528,8 +1528,14 @@ public class DataStream<T> {
                 TypeExtractor.getMapPartitionReturnTypes(
                         mapPartitionFunction, getType(), opName, true);
         this.setConnectionType(new ForwardPartitioner<>());
-        SingleOutputStreamOperator<R> resultStream = this.transform(
-                opName, resultType, new MapPartitionOperator<>(getType(), mapPartitionFunction));
+
+        // SingleOutputStreamOperator<R> resultStream = this.transform(
+        //        opName, resultType, new MapPartitionOperator<>(getType(), mapPartitionFunction));
+
+        SingleOutputStreamOperator<R> resultStream =
+                this.transform(
+                        opName, resultType, new MapPartitionOperator2<>(mapPartitionFunction));
+
         setManagedMemoryWeight(resultStream, 100);
         return resultStream;
     }
