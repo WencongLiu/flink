@@ -35,7 +35,6 @@ import org.apache.flink.streaming.api.functions.windowing.PassThroughWindowFunct
 import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
-import org.apache.flink.streaming.api.operators.sort.EOFAggregationOperator;
 import org.apache.flink.streaming.api.windowing.assigners.WindowAssigner;
 import org.apache.flink.streaming.api.windowing.evictors.Evictor;
 import org.apache.flink.streaming.api.windowing.time.Time;
@@ -329,13 +328,13 @@ public class WindowedStream<T, K, W extends Window> {
                     "This aggregation function cannot be a RichFunction.");
         }
 
-        if (builder.canApplyEndOfStreamOperator()) {
-            function = input.getExecutionEnvironment().clean(function);
-            EOFAggregationOperator<T, K, ACC, R> operator = new EOFAggregationOperator<>(function);
-            final String opName = builder.generateOperatorName();
-            final String opDescription = builder.generateOperatorDescription(function, null);
-            return input.transform(opName, resultType, operator).setDescription(opDescription);
-        }
+        //if (builder.canApplyEndOfStreamOperator()) {
+        //    function = input.getExecutionEnvironment().clean(function);
+        //    EOFAggregationOperator<T, K, ACC, R> operator = new EOFAggregationOperator<>(function);
+        //    final String opName = builder.generateOperatorName();
+        //    final String opDescription = builder.generateOperatorDescription(function, null);
+        //    return input.transform(opName, resultType, operator).setDescription(opDescription);
+        //}
 
         return aggregate(function, new PassThroughWindowFunction<>(), accumulatorType, resultType);
     }
