@@ -49,7 +49,6 @@ import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.runtime.tasks.StreamTask;
 import org.apache.flink.util.MutableObjectIterator;
-import org.apache.flink.util.TraversableOnceException;
 
 import java.io.Serializable;
 import java.util.Iterator;
@@ -302,12 +301,13 @@ public class EOFCoGroupOperator<IN1, IN2, KEY, OUT>
 
         @Override
         public Iterator<T> iterator() {
-            if (iteratorAvailable) {
-                iteratorAvailable = false;
-                return this;
-            } else {
-                throw new TraversableOnceException();
-            }
+            return this;
+            //if (iteratorAvailable) {
+            //    iteratorAvailable = false;
+            //    return this;
+            //} else {
+            //    throw new TraversableOnceException();
+            //}
         }
     }
 }
