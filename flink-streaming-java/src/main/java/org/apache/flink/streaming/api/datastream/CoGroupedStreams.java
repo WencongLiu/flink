@@ -35,7 +35,6 @@ import org.apache.flink.core.memory.DataInputView;
 import org.apache.flink.core.memory.DataOutputView;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.operators.sort.EOFCoGroupOperator;
-import org.apache.flink.streaming.api.windowing.assigners.EndOfStreamWindows;
 import org.apache.flink.streaming.api.windowing.assigners.WindowAssigner;
 import org.apache.flink.streaming.api.windowing.evictors.Evictor;
 import org.apache.flink.streaming.api.windowing.time.Time;
@@ -370,52 +369,54 @@ public class CoGroupedStreams<T1, T2> {
 
             // Using EOFCoGroupOperator when the window assigner is EndOfStreamWindows and both
             // trigger and evictor are null
-            if (windowAssigner instanceof EndOfStreamWindows
-                    && trigger == null
-                    && evictor == null) {
-                EOFCoGroupOperator<T1, T2, KEY, T> coGroupOperator =
-                        new EOFCoGroupOperator<>(function);
-                return input1.connect(input2)
-                        .keyBy(keySelector1, keySelector2)
-                        .transform("CoGroup", resultType, coGroupOperator)
-                        .setParallelism(Math.max(input1.getParallelism(), input2.getParallelism()));
-            }
 
-            UnionTypeInfo<T1, T2> unionType =
-                    new UnionTypeInfo<>(input1.getType(), input2.getType());
-            UnionKeySelector<T1, T2, KEY> unionKeySelector =
-                    new UnionKeySelector<>(keySelector1, keySelector2);
+            EOFCoGroupOperator<T1, T2, KEY, T> coGroupOperator = new EOFCoGroupOperator<>(function);
+            return input1.connect(input2)
+                    .keyBy(keySelector1, keySelector2)
+                    .transform("CoGroup", resultType, coGroupOperator)
+                    .setParallelism(Math.max(input1.getParallelism(), input2.getParallelism()));
 
-            SingleOutputStreamOperator<TaggedUnion<T1, T2>> taggedInput1 =
-                    input1.map(new Input1Tagger<T1, T2>());
-            taggedInput1.getTransformation().setParallelism(input1.getParallelism(), false);
-            taggedInput1.returns(unionType);
-
-            SingleOutputStreamOperator<TaggedUnion<T1, T2>> taggedInput2 =
-                    input2.map(new Input2Tagger<T1, T2>());
-            taggedInput2.getTransformation().setParallelism(input2.getParallelism(), false);
-            taggedInput2.returns(unionType);
-
-            DataStream<TaggedUnion<T1, T2>> unionStream = taggedInput1.union(taggedInput2);
-
-            // we explicitly create the keyed stream to manually pass the key type information in
-            windowedStream =
-                    new KeyedStream<TaggedUnion<T1, T2>, KEY>(
-                                    unionStream, unionKeySelector, keyType)
-                            .window(windowAssigner);
-
-            if (trigger != null) {
-                windowedStream.trigger(trigger);
-            }
-            if (evictor != null) {
-                windowedStream.evictor(evictor);
-            }
-            if (allowedLateness != null) {
-                windowedStream.allowedLateness(allowedLateness);
-            }
-
-            return windowedStream.apply(
-                    new CoGroupWindowFunction<T1, T2, T, KEY, W>(function), resultType);
+            // if (windowAssigner instanceof EndOfStreamWindows
+            //        && trigger == null
+            //        && evictor == null) {
+            //
+            // }
+            //
+            // UnionTypeInfo<T1, T2> unionType =
+            //        new UnionTypeInfo<>(input1.getType(), input2.getType());
+            // UnionKeySelector<T1, T2, KEY> unionKeySelector =
+            //        new UnionKeySelector<>(keySelector1, keySelector2);
+            //
+            // SingleOutputStreamOperator<TaggedUnion<T1, T2>> taggedInput1 =
+            //        input1.map(new Input1Tagger<T1, T2>());
+            // taggedInput1.getTransformation().setParallelism(input1.getParallelism(), false);
+            // taggedInput1.returns(unionType);
+            //
+            // SingleOutputStreamOperator<TaggedUnion<T1, T2>> taggedInput2 =
+            //        input2.map(new Input2Tagger<T1, T2>());
+            // taggedInput2.getTransformation().setParallelism(input2.getParallelism(), false);
+            // taggedInput2.returns(unionType);
+            //
+            // DataStream<TaggedUnion<T1, T2>> unionStream = taggedInput1.union(taggedInput2);
+            //
+            //// we explicitly create the keyed stream to manually pass the key type information in
+            // windowedStream =
+            //        new KeyedStream<TaggedUnion<T1, T2>, KEY>(
+            //                        unionStream, unionKeySelector, keyType)
+            //                .window(windowAssigner);
+            //
+            // if (trigger != null) {
+            //    windowedStream.trigger(trigger);
+            // }
+            // if (evictor != null) {
+            //    windowedStream.evictor(evictor);
+            // }
+            // if (allowedLateness != null) {
+            //    windowedStream.allowedLateness(allowedLateness);
+            // }
+            //
+            // return windowedStream.apply(
+            //        new CoGroupWindowFunction<T1, T2, T, KEY, W>(function), resultType);
         }
 
         /**
