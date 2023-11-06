@@ -55,6 +55,7 @@ import org.apache.flink.configuration.AkkaOptions;
 import org.apache.flink.core.execution.JobClient;
 import org.apache.flink.core.fs.FileSystem.WriteMode;
 import org.apache.flink.core.fs.Path;
+import org.apache.flink.core.memory.ManagedMemoryUseCase;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
@@ -111,6 +112,7 @@ import org.apache.flink.util.Preconditions;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -1437,6 +1439,31 @@ public class DataStream<T> {
 
         env.registerCollectIterator(iterator);
         collector.setIterator(iterator);
+    }
+
+    /**
+     * Collect records in each subtask of this data stream into a separate full window. The window
+     * emission will be triggered at the end of inputs.
+     *
+     * @return The data stream full windowed on each subtask.
+     */
+    public PartitionWindowedStream<T> fullWindowPartition() {
+        return new PartitionWindowedStream<>(environment, getTransformation());
+    }
+
+    protected static <T> void setManagedMemoryWeight(DataStream<T> dataStream, long memoryBytes) {
+        if (memoryBytes > 0) {
+            final int weightInMebibyte = Math.max(1, (int) (memoryBytes >> 20));
+            final Optional<Integer> previousWeight =
+                    dataStream
+                            .getTransformation()
+                            .declareManagedMemoryUseCaseAtOperatorScope(
+                                    ManagedMemoryUseCase.OPERATOR, weightInMebibyte);
+            if (previousWeight.isPresent()) {
+                throw new RuntimeException(
+                        "Managed memory weight has been set, this should not happen.");
+            }
+        }
     }
 
     /**
