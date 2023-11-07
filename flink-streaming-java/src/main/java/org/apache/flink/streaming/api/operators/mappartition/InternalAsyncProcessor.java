@@ -21,9 +21,10 @@ package org.apache.flink.streaming.api.operators.mappartition;
 import java.util.function.Consumer;
 
 /**
- * The {@link InternalAsyncProcessor} is used to process records asynchronously in the user-defined
- * function. It will remember the context where last record is processed and continue the
- * computation from the context when the next record arrives.
+ * The {@link InternalAsyncProcessor} is invoked by task main thread in the operator. It's used to
+ * process records asynchronously in the user-defined function with {@link Iterable} parameter. It
+ * will store the context where last record is processed and continue to process from the context
+ * when the next record arrives.
  */
 public interface InternalAsyncProcessor<T> {
 
@@ -38,6 +39,6 @@ public interface InternalAsyncProcessor<T> {
     /** Process a record asynchronously. */
     void processRecordAsync(T record);
 
-    /** Complete the input process. */
-    void endOfInput();
+    /** Close the processor. */
+    void close();
 }

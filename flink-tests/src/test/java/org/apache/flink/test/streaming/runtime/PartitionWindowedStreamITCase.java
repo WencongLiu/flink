@@ -17,19 +17,17 @@
 
 package org.apache.flink.test.streaming.runtime;
 
+import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.functions.MapPartitionFunction;
+import org.apache.flink.api.common.functions.ReduceFunction;
+import org.apache.flink.api.common.operators.Order;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.streaming.api.datastream.KeyedStream;
+import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.PartitionWindowedStream;
-import org.apache.flink.streaming.api.datastream.UnsupportedTimeCharacteristicException;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.co.ProcessJoinFunction;
 import org.apache.flink.streaming.api.functions.sink.SinkFunction;
-import org.apache.flink.streaming.api.functions.source.SourceFunction;
-import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor;
-import org.apache.flink.streaming.api.watermark.Watermark;
-import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.util.Collector;
 
 import org.apache.flink.shaded.guava31.com.google.common.collect.Lists;
@@ -38,11 +36,9 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.function.Consumer;
 
 /** Integration tests for {@link PartitionWindowedStream}. */
 public class PartitionWindowedStreamITCase {
@@ -56,360 +52,250 @@ public class PartitionWindowedStreamITCase {
 
     @Test
     public void testMapPartition() throws Exception {
-
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        KeyedStream<Tuple2<String, Integer>, String> streamOne =
-                env.fromElements(
-                                Tuple2.of("key", 0),
-                                Tuple2.of("key", 1),
-                                Tuple2.of("key", 2),
-                                Tuple2.of("key", 3),
-                                Tuple2.of("key", 4),
-                                Tuple2.of("key", 5))
-                        .assignTimestampsAndWatermarks(new AscendingTuple2TimestampExtractor())
-                        .keyBy(new Tuple2KeyExtractor());
-
-        KeyedStream<Tuple2<String, Integer>, String> streamTwo =
-                env.fromElements(
-                                Tuple2.of("key", 0),
-                                Tuple2.of("key", 1),
-                                Tuple2.of("key", 2),
-                                Tuple2.of("key", 3),
-                                Tuple2.of("key", 4),
-                                Tuple2.of("key", 5))
-                        .assignTimestampsAndWatermarks(new AscendingTuple2TimestampExtractor())
-                        .keyBy(new Tuple2KeyExtractor());
-
-        streamOne
-                .intervalJoin(streamTwo)
-                .between(Time.milliseconds(0), Time.milliseconds(0))
-                .process(
-                        new ProcessJoinFunction<
-                                Tuple2<String, Integer>, Tuple2<String, Integer>, String>() {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        DataStreamSource<String> source =
+                env.fromElements("Test", "Test", "Test", "Test", "Test", "Test");
+        source.map(v -> v)
+                .setParallelism(2)
+                .fullWindowPartition()
+                .mapPartition(
+                        new MapPartitionFunction<String, String>() {
                             @Override
-                            public void processElement(
-                                    Tuple2<String, Integer> left,
-                                    Tuple2<String, Integer> right,
-                                    Context ctx,
-                                    Collector<String> out)
-                                    throws Exception {
-                                out.collect(left + ":" + right);
+                            public void mapPartition(
+                                    Iterable<String> values, Collector<String> out) {
+                                StringBuilder sb = new StringBuilder();
+                                for (String value : values) {
+                                    sb.append(value);
+                                }
+                                out.collect(sb.toString());
                             }
                         })
                 .addSink(new ResultSink());
 
-        env.execute();
-
-        expectInAnyOrder(
-                "(key,0):(key,0)",
-                "(key,1):(key,1)",
-                "(key,2):(key,2)",
-                "(key,3):(key,3)",
-                "(key,4):(key,4)",
-                "(key,5):(key,5)");
+        env.execute().getAllAccumulatorResults();
+        expectInAnyOrder("TestTestTest", "TestTestTest");
     }
 
     @Test
-    public void testJoinsCorrectlyWithMultipleKeys() throws Exception {
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(1);
+    public void testSortPartitionOfTupleElementsAscending() throws Exception {
+        sortPartitionOfTupleElementsInOrder(Order.ASCENDING);
+        expectInAnyOrder("013", "013");
+    }
 
-        KeyedStream<Tuple2<String, Integer>, String> streamOne =
+    @Test
+    public void testSortPartitionOfTupleElementsDescending() throws Exception {
+        sortPartitionOfTupleElementsInOrder(Order.DESCENDING);
+        expectInAnyOrder("310", "310");
+    }
+
+    @Test
+    public void testSortPartitionOfPojoElementsAscending() throws Exception {
+        sortPartitionOfPojoElementsInOrder(Order.ASCENDING);
+        expectInAnyOrder("013", "013");
+    }
+
+    @Test
+    public void testSortPartitionOfPojoElementsDescending() throws Exception {
+        sortPartitionOfPojoElementsInOrder(Order.DESCENDING);
+        expectInAnyOrder("310", "310");
+    }
+
+    @Test
+    public void testSortPartitionByKeySelectorAscending() throws Exception {
+        sortPartitionByKeySelectorInOrder(Order.ASCENDING);
+        expectInAnyOrder("013", "013");
+    }
+
+    @Test
+    public void testSortPartitionByKeySelectorDescending() throws Exception {
+        sortPartitionByKeySelectorInOrder(Order.DESCENDING);
+        expectInAnyOrder("310", "310");
+    }
+
+    @Test
+    public void testReduce() throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        DataStreamSource<Integer> source = env.fromElements(1, 1, 1, 1, 998, 998);
+        source.map(v -> v)
+                .setParallelism(2)
+                .fullWindowPartition()
+                .reduce(
+                        new ReduceFunction<Integer>() {
+                            @Override
+                            public Integer reduce(Integer value1, Integer value2) throws Exception {
+                                return value1 + value2;
+                            }
+                        })
+                .map(
+                        new MapFunction<Integer, String>() {
+                            @Override
+                            public String map(Integer value) throws Exception {
+                                return String.valueOf(value);
+                            }
+                        })
+                .addSink(new ResultSink());
+
+        env.execute().getAllAccumulatorResults();
+        expectInAnyOrder("1000", "1000");
+    }
+
+    @Test
+    public void testAggregate() throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        DataStreamSource<Integer> source = env.fromElements(1, 1, 2, 2, 3, 3);
+        source.map(v -> v)
+                .setParallelism(2)
+                .fullWindowPartition()
+                .aggregate(
+                        new AggregateFunction<Integer, TestAccumulator, String>() {
+                            @Override
+                            public TestAccumulator createAccumulator() {
+                                return new TestAccumulator();
+                            }
+
+                            @Override
+                            public TestAccumulator add(Integer value, TestAccumulator accumulator) {
+                                accumulator.addTestField(value);
+                                return accumulator;
+                            }
+
+                            @Override
+                            public String getResult(TestAccumulator accumulator) {
+                                return accumulator.getTestField();
+                            }
+
+                            @Override
+                            public TestAccumulator merge(TestAccumulator a, TestAccumulator b) {
+                                throw new RuntimeException();
+                            }
+                        })
+                .addSink(new ResultSink());
+
+        env.execute().getAllAccumulatorResults();
+        expectInAnyOrder("94", "94");
+    }
+
+    private void sortPartitionOfTupleElementsInOrder(Order order) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        DataStreamSource<Tuple2<String, Integer>> source =
                 env.fromElements(
-                                Tuple2.of("key1", 0),
-                                Tuple2.of("key2", 1),
-                                Tuple2.of("key1", 2),
-                                Tuple2.of("key2", 3),
-                                Tuple2.of("key1", 4),
-                                Tuple2.of("key2", 5))
-                        .assignTimestampsAndWatermarks(new AscendingTuple2TimestampExtractor())
-                        .keyBy(new Tuple2KeyExtractor());
-
-        KeyedStream<Tuple2<String, Integer>, String> streamTwo =
-                env.fromElements(
-                                Tuple2.of("key1", 0),
-                                Tuple2.of("key2", 1),
-                                Tuple2.of("key1", 2),
-                                Tuple2.of("key2", 3),
-                                Tuple2.of("key1", 4),
-                                Tuple2.of("key2", 5))
-                        .assignTimestampsAndWatermarks(new AscendingTuple2TimestampExtractor())
-                        .keyBy(new Tuple2KeyExtractor());
-
-        streamOne
-                .intervalJoin(streamTwo)
-                // if it were not keyed then the boundaries [0; 1] would lead to the pairs (1, 1),
-                // (1, 2), (2, 2), (2, 3)..., so that this is not happening is what we are testing
-                // here
-                .between(Time.milliseconds(0), Time.milliseconds(1))
-                .process(new CombineToStringJoinFunction())
-                .addSink(new ResultSink());
-
-        env.execute();
-
-        expectInAnyOrder(
-                "(key1,0):(key1,0)",
-                "(key2,1):(key2,1)",
-                "(key1,2):(key1,2)",
-                "(key2,3):(key2,3)",
-                "(key1,4):(key1,4)",
-                "(key2,5):(key2,5)");
-    }
-
-    private DataStream<Tuple2<String, Integer>> buildSourceStream(
-            final StreamExecutionEnvironment env, final SourceConsumer sourceConsumer) {
-        return env.addSource(
-                new SourceFunction<Tuple2<String, Integer>>() {
-                    @Override
-                    public void run(SourceContext<Tuple2<String, Integer>> ctx) {
-                        sourceConsumer.accept(ctx);
-                    }
-
-                    @Override
-                    public void cancel() {
-                        // do nothing
-                    }
-                });
-    }
-
-    // Ensure consumer func is serializable
-    private interface SourceConsumer
-            extends Serializable, Consumer<SourceFunction.SourceContext<Tuple2<String, Integer>>> {
-        long serialVersionUID = 1L;
-    }
-
-    @Test
-    public void testBoundedUnorderedStreamsStillJoinCorrectly() throws Exception {
-
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(1);
-
-        DataStream<Tuple2<String, Integer>> streamOne =
-                env.addSource(
-                        new SourceFunction<Tuple2<String, Integer>>() {
+                        Tuple2.of("Test", 0),
+                        Tuple2.of("Test", 0),
+                        Tuple2.of("Test", 3),
+                        Tuple2.of("Test", 3),
+                        Tuple2.of("Test", 1),
+                        Tuple2.of("Test", 1));
+        source.rebalance()
+                .map(
+                        new MapFunction<Tuple2<String, Integer>, Tuple2<String, Integer>>() {
                             @Override
-                            public void run(SourceContext<Tuple2<String, Integer>> ctx) {
-                                ctx.collectWithTimestamp(Tuple2.of("key", 5), 5L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 1), 1L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 4), 4L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 3), 3L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 2), 2L);
-                                ctx.emitWatermark(new Watermark(5));
-                                ctx.collectWithTimestamp(Tuple2.of("key", 9), 9L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 8), 8L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 7), 7L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 6), 6L);
-                            }
-
-                            @Override
-                            public void cancel() {
-                                // do nothing
-                            }
-                        });
-
-        DataStream<Tuple2<String, Integer>> streamTwo =
-                env.addSource(
-                        new SourceFunction<Tuple2<String, Integer>>() {
-                            @Override
-                            public void run(SourceContext<Tuple2<String, Integer>> ctx) {
-                                ctx.collectWithTimestamp(Tuple2.of("key", 2), 2L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 1), 1L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 3), 3L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 4), 4L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 5), 5L);
-                                ctx.emitWatermark(new Watermark(5));
-                                ctx.collectWithTimestamp(Tuple2.of("key", 8), 8L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 7), 7L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 9), 9L);
-                                ctx.collectWithTimestamp(Tuple2.of("key", 6), 6L);
-                            }
-
-                            @Override
-                            public void cancel() {
-                                // do nothing
-                            }
-                        });
-
-        streamOne
-                .keyBy(new Tuple2KeyExtractor())
-                .intervalJoin(streamTwo.keyBy(new Tuple2KeyExtractor()))
-                .between(Time.milliseconds(-1), Time.milliseconds(1))
-                .process(new CombineToStringJoinFunction())
-                .addSink(new ResultSink());
-
-        env.execute();
-
-        expectInAnyOrder(
-                "(key,1):(key,1)",
-                "(key,1):(key,2)",
-                "(key,2):(key,1)",
-                "(key,2):(key,2)",
-                "(key,2):(key,3)",
-                "(key,3):(key,2)",
-                "(key,3):(key,3)",
-                "(key,3):(key,4)",
-                "(key,4):(key,3)",
-                "(key,4):(key,4)",
-                "(key,4):(key,5)",
-                "(key,5):(key,4)",
-                "(key,5):(key,5)",
-                "(key,5):(key,6)",
-                "(key,6):(key,5)",
-                "(key,6):(key,6)",
-                "(key,6):(key,7)",
-                "(key,7):(key,6)",
-                "(key,7):(key,7)",
-                "(key,7):(key,8)",
-                "(key,8):(key,7)",
-                "(key,8):(key,8)",
-                "(key,8):(key,9)",
-                "(key,9):(key,8)",
-                "(key,9):(key,9)");
-    }
-
-    @Test(expected = NullPointerException.class)
-    public void testFailsWithoutUpperBound() {
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(1);
-
-        DataStream<Tuple2<String, Integer>> streamOne = env.fromElements(Tuple2.of("1", 1));
-        DataStream<Tuple2<String, Integer>> streamTwo = env.fromElements(Tuple2.of("1", 1));
-
-        streamOne
-                .keyBy(new Tuple2KeyExtractor())
-                .intervalJoin(streamTwo.keyBy(new Tuple2KeyExtractor()))
-                .between(Time.milliseconds(0), null);
-    }
-
-    @Test(expected = NullPointerException.class)
-    public void testFailsWithoutLowerBound() {
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(1);
-
-        DataStream<Tuple2<String, Integer>> streamOne = env.fromElements(Tuple2.of("1", 1));
-        DataStream<Tuple2<String, Integer>> streamTwo = env.fromElements(Tuple2.of("1", 1));
-
-        streamOne
-                .keyBy(new Tuple2KeyExtractor())
-                .intervalJoin(streamTwo.keyBy(new Tuple2KeyExtractor()))
-                .between(null, Time.milliseconds(1));
-    }
-
-    @Test
-    public void testBoundsCanBeExclusive() throws Exception {
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(1);
-
-        DataStream<Tuple2<String, Integer>> streamOne =
-                env.fromElements(Tuple2.of("key", 0), Tuple2.of("key", 1), Tuple2.of("key", 2))
-                        .assignTimestampsAndWatermarks(new AscendingTuple2TimestampExtractor());
-
-        DataStream<Tuple2<String, Integer>> streamTwo =
-                env.fromElements(Tuple2.of("key", 0), Tuple2.of("key", 1), Tuple2.of("key", 2))
-                        .assignTimestampsAndWatermarks(new AscendingTuple2TimestampExtractor());
-
-        streamOne
-                .keyBy(new Tuple2KeyExtractor())
-                .intervalJoin(streamTwo.keyBy(new Tuple2KeyExtractor()))
-                .between(Time.milliseconds(0), Time.milliseconds(2))
-                .upperBoundExclusive()
-                .lowerBoundExclusive()
-                .process(new CombineToStringJoinFunction())
-                .addSink(new ResultSink());
-
-        env.execute();
-
-        expectInAnyOrder("(key,0):(key,1)", "(key,1):(key,2)");
-    }
-
-    @Test
-    public void testBoundsCanBeInclusive() throws Exception {
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(1);
-
-        DataStream<Tuple2<String, Integer>> streamOne =
-                env.fromElements(Tuple2.of("key", 0), Tuple2.of("key", 1), Tuple2.of("key", 2))
-                        .assignTimestampsAndWatermarks(new AscendingTuple2TimestampExtractor());
-
-        DataStream<Tuple2<String, Integer>> streamTwo =
-                env.fromElements(Tuple2.of("key", 0), Tuple2.of("key", 1), Tuple2.of("key", 2))
-                        .assignTimestampsAndWatermarks(new AscendingTuple2TimestampExtractor());
-
-        streamOne
-                .keyBy(new Tuple2KeyExtractor())
-                .intervalJoin(streamTwo.keyBy(new Tuple2KeyExtractor()))
-                .between(Time.milliseconds(0), Time.milliseconds(2))
-                .process(new CombineToStringJoinFunction())
-                .addSink(new ResultSink());
-
-        env.execute();
-
-        expectInAnyOrder(
-                "(key,0):(key,0)",
-                "(key,0):(key,1)",
-                "(key,0):(key,2)",
-                "(key,1):(key,1)",
-                "(key,1):(key,2)",
-                "(key,2):(key,2)");
-    }
-
-    @Test
-    public void testBoundsAreInclusiveByDefault() throws Exception {
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(1);
-
-        DataStream<Tuple2<String, Integer>> streamOne =
-                env.fromElements(Tuple2.of("key", 0), Tuple2.of("key", 1), Tuple2.of("key", 2))
-                        .assignTimestampsAndWatermarks(new AscendingTuple2TimestampExtractor());
-
-        DataStream<Tuple2<String, Integer>> streamTwo =
-                env.fromElements(Tuple2.of("key", 0), Tuple2.of("key", 1), Tuple2.of("key", 2))
-                        .assignTimestampsAndWatermarks(new AscendingTuple2TimestampExtractor());
-
-        streamOne
-                .keyBy(new Tuple2KeyExtractor())
-                .intervalJoin(streamTwo.keyBy(new Tuple2KeyExtractor()))
-                .between(Time.milliseconds(0), Time.milliseconds(2))
-                .process(new CombineToStringJoinFunction())
-                .addSink(new ResultSink());
-
-        env.execute();
-
-        expectInAnyOrder(
-                "(key,0):(key,0)",
-                "(key,0):(key,1)",
-                "(key,0):(key,2)",
-                "(key,1):(key,1)",
-                "(key,1):(key,2)",
-                "(key,2):(key,2)");
-    }
-
-    @Test(expected = UnsupportedTimeCharacteristicException.class)
-    public void testExecutionFailsInProcessingTime() throws Exception {
-        final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(1);
-
-        DataStream<Tuple2<String, Integer>> streamOne = env.fromElements(Tuple2.of("1", 1));
-        DataStream<Tuple2<String, Integer>> streamTwo = env.fromElements(Tuple2.of("1", 1));
-
-        streamOne
-                .keyBy(new Tuple2KeyExtractor())
-                .intervalJoin(streamTwo.keyBy(new Tuple2KeyExtractor()))
-                .inProcessingTime()
-                .between(Time.milliseconds(0), Time.milliseconds(0))
-                .process(
-                        new ProcessJoinFunction<
-                                Tuple2<String, Integer>, Tuple2<String, Integer>, String>() {
-                            @Override
-                            public void processElement(
-                                    Tuple2<String, Integer> left,
-                                    Tuple2<String, Integer> right,
-                                    Context ctx,
-                                    Collector<String> out)
+                            public Tuple2<String, Integer> map(Tuple2<String, Integer> value)
                                     throws Exception {
-                                out.collect(left + ":" + right);
+                                return value;
                             }
-                        });
+                        })
+                .setParallelism(2)
+                .fullWindowPartition()
+                .sortPartition(1, order)
+                .fullWindowPartition()
+                .mapPartition(
+                        new MapPartitionFunction<Tuple2<String, Integer>, String>() {
+                            @Override
+                            public void mapPartition(
+                                    Iterable<Tuple2<String, Integer>> values,
+                                    Collector<String> out) {
+                                StringBuilder sb = new StringBuilder();
+                                for (Tuple2<String, Integer> value : values) {
+                                    sb.append(value.f1);
+                                }
+                                out.collect(sb.toString());
+                            }
+                        })
+                .addSink(new ResultSink());
+        env.execute();
+    }
+
+    private void sortPartitionOfPojoElementsInOrder(Order order) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        DataStreamSource<TestPojo> source =
+                env.fromElements(
+                        new TestPojo(0),
+                        new TestPojo(0),
+                        new TestPojo(3),
+                        new TestPojo(3),
+                        new TestPojo(1),
+                        new TestPojo(1));
+        source.rebalance()
+                .map(
+                        new MapFunction<TestPojo, TestPojo>() {
+                            @Override
+                            public TestPojo map(TestPojo value) throws Exception {
+                                return value;
+                            }
+                        })
+                .setParallelism(2)
+                .fullWindowPartition()
+                .sortPartition("value", order)
+                .fullWindowPartition()
+                .mapPartition(
+                        new MapPartitionFunction<TestPojo, String>() {
+                            @Override
+                            public void mapPartition(
+                                    Iterable<TestPojo> values, Collector<String> out) {
+                                StringBuilder sb = new StringBuilder();
+                                for (TestPojo value : values) {
+                                    sb.append(value.getValue());
+                                }
+                                out.collect(sb.toString());
+                            }
+                        })
+                .addSink(new ResultSink());
+        env.execute();
+    }
+
+    private void sortPartitionByKeySelectorInOrder(Order order) throws Exception {
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        DataStreamSource<TestPojo> source =
+                env.fromElements(
+                        new TestPojo(0),
+                        new TestPojo(0),
+                        new TestPojo(3),
+                        new TestPojo(3),
+                        new TestPojo(1),
+                        new TestPojo(1));
+        source.rebalance()
+                .map(
+                        new MapFunction<TestPojo, TestPojo>() {
+                            @Override
+                            public TestPojo map(TestPojo value) throws Exception {
+                                return value;
+                            }
+                        })
+                .setParallelism(2)
+                .fullWindowPartition()
+                .sortPartition(
+                        new KeySelector<TestPojo, Integer>() {
+                            @Override
+                            public Integer getKey(TestPojo value) throws Exception {
+                                return value.getValue();
+                            }
+                        },
+                        order)
+                .fullWindowPartition()
+                .mapPartition(
+                        new MapPartitionFunction<TestPojo, String>() {
+                            @Override
+                            public void mapPartition(
+                                    Iterable<TestPojo> values, Collector<String> out) {
+                                StringBuilder sb = new StringBuilder();
+                                for (TestPojo value : values) {
+                                    sb.append(value.getValue());
+                                }
+                                out.collect(sb.toString());
+                            }
+                        })
+                .addSink(new ResultSink());
+        env.execute();
     }
 
     private static void expectInAnyOrder(String... expected) {
@@ -419,14 +305,6 @@ public class PartitionWindowedStreamITCase {
         Assert.assertEquals(listExpected, testResults);
     }
 
-    private static class AscendingTuple2TimestampExtractor
-            extends AscendingTimestampExtractor<Tuple2<String, Integer>> {
-        @Override
-        public long extractAscendingTimestamp(Tuple2<String, Integer> element) {
-            return element.f1;
-        }
-    }
-
     private static class ResultSink implements SinkFunction<String> {
         @Override
         public void invoke(String value, Context context) throws Exception {
@@ -434,24 +312,35 @@ public class PartitionWindowedStreamITCase {
         }
     }
 
-    private static class CombineToStringJoinFunction
-            extends ProcessJoinFunction<Tuple2<String, Integer>, Tuple2<String, Integer>, String> {
-        @Override
-        public void processElement(
-                Tuple2<String, Integer> left,
-                Tuple2<String, Integer> right,
-                Context ctx,
-                Collector<String> out) {
-            out.collect(left + ":" + right);
+    /** The test pojo. */
+    public static class TestPojo {
+        private Integer value;
+
+        public TestPojo() {}
+
+        public TestPojo(Integer value) {
+            this.value = value;
+        }
+
+        public Integer getValue() {
+            return value;
+        }
+
+        public void setValue(Integer value) {
+            this.value = value;
         }
     }
 
-    private static class Tuple2KeyExtractor
-            implements KeySelector<Tuple2<String, Integer>, String> {
+    /** The test accumulator. */
+    public static class TestAccumulator {
+        private Integer testField = 100;
 
-        @Override
-        public String getKey(Tuple2<String, Integer> value) throws Exception {
-            return value.f0;
+        private void addTestField(Integer number) {
+            testField = testField - number;
+        }
+
+        public String getTestField() {
+            return String.valueOf(testField);
         }
     }
 }

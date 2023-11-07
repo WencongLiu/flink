@@ -72,9 +72,9 @@ public class StreamMapPartitionTest {
                                     ++number;
                                 }
                                 builder.append(" ").append(number).append(" records.");
-                                System.out.println(builder);
+                                out.collect(builder.toString());
                             }
-                        });
+                        }).print();
         executionEnvironment.execute();
     }
 

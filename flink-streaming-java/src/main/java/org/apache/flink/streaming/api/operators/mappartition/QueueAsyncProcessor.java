@@ -24,9 +24,8 @@ import org.apache.flink.util.concurrent.ExecutorThreadFactory;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Queue;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -35,117 +34,139 @@ import java.util.function.Supplier;
 
 import static org.apache.flink.util.Preconditions.checkState;
 
-/** The default implementation of {@link InternalAsyncProcessor} with a queue structure. */
-public class QueueAsyncProcessor<T> implements InternalAsyncProcessor<T>, Iterable<T>, Iterator<T> {
+/** The default implementation of {@link InternalAsyncProcessor}. */
+public class QueueAsyncProcessor<IN>
+        implements InternalAsyncProcessor<IN>, Iterable<IN>, Iterator<IN> {
 
-    private static final int RECORD_QUEUE_SIZE = 10;
+    /**
+     * Max number of caches.
+     *
+     * <p>The constant defines the maximum number of caches that can be stored. Its default value is
+     * set to 100. As the size of each record is less than 1MB for most scenario, only 100MB of heap
+     * memory is needed to store max number of caches.
+     */
+    private static final int DEFAULT_MAX_CACHE_NUM = 100;
 
+    /** The lock to ensure consistency between task main thread and udf executor. */
     private final Lock lock = new ReentrantLock();
 
-    private final ScheduledExecutorService asyncExecutor =
-            Executors.newScheduledThreadPool(
-                    1, new ExecutorThreadFactory("InternalAsyncProcessor"));
+    /** The condition of lock. */
+    private final Condition condition = lock.newCondition();
 
-    Queue<T> recordQueue = new LinkedList<>();
+    /** The task udf executor. */
+    private final Executor udfExecutor =
+            Executors.newFixedThreadPool(1, new ExecutorThreadFactory("TaskUDFExecutor"));
 
-    private final Condition producerCondition = lock.newCondition();
+    /** The queue to store record caches. */
+    private final Queue<IN> recordCaches = new LinkedList<>();
 
-    private final Condition consumerCondition = lock.newCondition();
+    /** The flag to represent the finished state of udf. */
+    private volatile boolean isUDFFinished = false;
 
-    private volatile boolean isUDFEnded = false;
-
-    private volatile boolean isEndOfInput = false;
+    /** The flag to represent the closed state of processor. */
+    private volatile boolean isClosed = false;
 
     @Override
-    public void registerUDF(Consumer<Iterable<T>> udf) {
-        asyncExecutor.execute(
+    public void registerUDF(Consumer<Iterable<IN>> udf) {
+        udfExecutor.execute(
                 () -> {
                     udf.accept(this);
                     runWithLock(
                             () -> {
-                                isUDFEnded = true;
-                                producerCondition.signal();
+                                isUDFFinished = true;
+                                notifyCacheStatus();
                             });
                 });
     }
 
     @Override
-    public void processRecordAsync(T record) {
+    public void processRecordAsync(IN record) {
         runWithLock(
                 () -> {
-                    if (isUDFEnded) {
+                    if (isUDFFinished) {
                         return;
                     }
-                    if (recordQueue.size() < RECORD_QUEUE_SIZE) {
-                        recordQueue.add(record);
-                        consumerCondition.signal();
+                    if (recordCaches.size() < DEFAULT_MAX_CACHE_NUM) {
+                        recordCaches.add(record);
+                        notifyCacheStatus();
                     } else {
-                        try {
-                            producerCondition.await();
-                        } catch (InterruptedException e) {
-                            ExceptionUtils.rethrow(e);
-                        }
+                        waitToGetCacheStatus();
                         processRecordAsync(record);
                     }
                 });
     }
 
     @Override
-    public void endOfInput() {
+    public void close() {
         runWithLock(
                 () -> {
-                    isEndOfInput = true;
-                    consumerCondition.signal();
+                    isClosed = true;
+                    notifyCacheStatus();
+                    if (!isUDFFinished) {
+                        waitToGetCacheStatus();
+                    }
                 });
     }
 
     @Override
-    public Iterator<T> iterator() {
+    public Iterator<IN> iterator() {
         return this;
     }
 
     @Override
     public boolean hasNext() {
-        AtomicBoolean hasNext = new AtomicBoolean(false);
-        runWithLock(
+        return supplyWithLock(
                 () -> {
-                    if (recordQueue.size() > 0) {
-                        hasNext.set(true);
-                    } else if (isEndOfInput) {
-                        hasNext.set(false);
+                    if (recordCaches.size() > 0) {
+                        return true;
+                    } else if (isClosed) {
+                        return false;
                     } else {
-                        try {
-                            consumerCondition.await();
-                        } catch (InterruptedException e) {
-                            ExceptionUtils.rethrow(e);
-                        }
-                        hasNext.set(hasNext());
+                        waitToGetCacheStatus();
+                        return hasNext();
                     }
                 });
-        return hasNext.get();
     }
 
     @Override
-    public T next() {
+    public IN next() {
         return supplyWithLock(
                 () -> {
-                    T record;
-                    if (recordQueue.size() > 0) {
-                        record = recordQueue.poll();
-                        producerCondition.signal();
+                    IN record;
+                    if (recordCaches.size() > 0) {
+                        record = recordCaches.poll();
+                        if (recordCaches.size() < DEFAULT_MAX_CACHE_NUM && !isClosed) {
+                            notifyCacheStatus();
+                        }
                         return record;
                     }
-                    try {
-                        consumerCondition.await();
-                    } catch (InterruptedException e) {
-                        ExceptionUtils.rethrow(e);
-                    }
-                    if (recordQueue.size() == 0) {
-                        checkState(isEndOfInput);
+                    waitToGetCacheStatus();
+                    if (recordCaches.size() == 0) {
+                        checkState(isClosed);
                         return null;
                     }
-                    return recordQueue.poll();
+                    return recordCaches.poll();
                 });
+    }
+
+    /**
+     * Notify task main thread or udf executor the latest status of record caches, including
+     * following status:
+     *
+     * <p>1. There exists available record caches. 2. The record caches are able to store more
+     * records, 3. There will be no more record to be stored in record caches.
+     */
+    private void notifyCacheStatus() {
+        condition.signal();
+    }
+
+    /** Wait until the latest status of record caches is notified. */
+    private void waitToGetCacheStatus() {
+        try {
+            condition.await();
+        } catch (InterruptedException e) {
+            ExceptionUtils.rethrow(e);
+        }
     }
 
     private void runWithLock(Runnable runnable) {
@@ -157,8 +178,8 @@ public class QueueAsyncProcessor<T> implements InternalAsyncProcessor<T>, Iterab
         }
     }
 
-    private T supplyWithLock(Supplier<T> supplier) {
-        T result;
+    private <ANY> ANY supplyWithLock(Supplier<ANY> supplier) {
+        ANY result;
         try {
             lock.lock();
             result = supplier.get();

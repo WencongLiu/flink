@@ -30,6 +30,8 @@ import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.operators.MapPartitionOperator;
+import org.apache.flink.streaming.api.operators.PartitionAggregateOperator;
+import org.apache.flink.streaming.api.operators.PartitionReduceOperator;
 import org.apache.flink.streaming.api.operators.SortPartitionOperator;
 import org.apache.flink.streaming.runtime.partitioner.ForwardPartitioner;
 
@@ -47,59 +49,6 @@ public class PartitionWindowedStream<T> extends DataStream<T> {
     public PartitionWindowedStream(
             StreamExecutionEnvironment environment, Transformation<T> transformation) {
         super(environment, transformation);
-    }
-
-    /**
-     * Sorts the records of the window on the specified field in the specified order. The type of
-     * records must be {@link Tuple}.
-     *
-     * @param field The field index on which records is sorted.
-     * @param order The order in which records is sorted.
-     * @return The resulting data stream with sorted records in each subtask.
-     */
-    public DataStream<T> sortPartition(int field, Order order) {
-        SortPartitionOperator<T> operator = new SortPartitionOperator<>(getType(), field, order);
-        final String opName = "SortPartition";
-        this.setConnectionType(new ForwardPartitioner<>());
-        SingleOutputStreamOperator<T> resultStream = this.transform(opName, getType(), operator);
-        setManagedMemoryWeight(resultStream, 100);
-        return resultStream;
-    }
-
-    /**
-     * Sorts the records of the window on the specified field in the specified order. The type of
-     * records must be {@link Tuple} or POJO.
-     *
-     * @param field The field expression referring to the field on which records is sorted.
-     * @param order The order in which records is sorted.
-     * @return The resulting data stream with sorted records in each subtask.
-     */
-    public DataStream<T> sortPartition(String field, Order order) {
-        SortPartitionOperator<T> operator = new SortPartitionOperator<>(getType(), field, order);
-        final String opName = "SortPartition";
-        this.setConnectionType(new ForwardPartitioner<>());
-        SingleOutputStreamOperator<T> resultStream = this.transform(opName, getType(), operator);
-        setManagedMemoryWeight(resultStream, 100);
-        return resultStream;
-    }
-
-    /**
-     * Sorts the records of the window on the extracted key in the specified order.
-     *
-     * @param keySelector The KeySelector function which extracts the key values from records.
-     * @param order The order in which records is sorted.
-     * @return The resulting data stream with sorted records in each subtask.
-     */
-    public <K> DataStream<T> sortPartition(KeySelector<T, K> keySelector, Order order) {
-        SortPartitionOperator<T> operator =
-                new SortPartitionOperator<>(getType(), clean(keySelector), order);
-        final String opName = "SortPartition";
-        this.setConnectionType(new ForwardPartitioner<>());
-        SingleOutputStreamOperator<T> resultStream =
-                this.transform(opName, getType(), operator)
-                        .setParallelism(transformation.getParallelism());
-        setManagedMemoryWeight(resultStream, 100);
-        return resultStream;
     }
 
     /**
@@ -127,6 +76,65 @@ public class PartitionWindowedStream<T> extends DataStream<T> {
     }
 
     /**
+     * Sorts the records of the window on the specified field in the specified order. The type of
+     * records must be {@link Tuple}.
+     *
+     * @param field The field index on which records is sorted.
+     * @param order The order in which records is sorted.
+     * @return The resulting data stream with sorted records in each subtask.
+     */
+    public DataStream<T> sortPartition(int field, Order order) {
+        SortPartitionOperator<T> operator = new SortPartitionOperator<>(getType(), field, order);
+        final String opName = "SortPartition";
+        this.setConnectionType(new ForwardPartitioner<>());
+        SingleOutputStreamOperator<T> resultStream =
+                this.transform(opName, getType(), operator)
+                        .setParallelism(this.transformation.getParallelism());
+        setManagedMemoryWeight(resultStream, 100);
+        return resultStream;
+    }
+
+    /**
+     * Sorts the records of the window on the specified field in the specified order. The type of
+     * records must be {@link Tuple} or POJO. The type of records must be {@link Tuple} or POJO
+     * class. The POJO class must be public and have getter and setter methods for each field. It
+     * mustn't implement any interfaces and extend any * classes.
+     *
+     * @param field The field expression referring to the field on which records is sorted.
+     * @param order The order in which records is sorted.
+     * @return The resulting data stream with sorted records in each subtask.
+     */
+    public DataStream<T> sortPartition(String field, Order order) {
+        SortPartitionOperator<T> operator = new SortPartitionOperator<>(getType(), field, order);
+        final String opName = "SortPartition";
+        this.setConnectionType(new ForwardPartitioner<>());
+        SingleOutputStreamOperator<T> resultStream =
+                this.transform(opName, getType(), operator)
+                        .setParallelism(this.transformation.getParallelism());
+        setManagedMemoryWeight(resultStream, 100);
+        return resultStream;
+    }
+
+    /**
+     * Sorts the records of the window on the extracted key in the specified order.
+     *
+     * @param keySelector The KeySelector function which extracts the key values from records.
+     * @param order The order in which records is sorted.
+     * @return The resulting data stream with sorted records in each subtask.
+     */
+    public <K> DataStream<T> sortPartition(KeySelector<T, K> keySelector, Order order) {
+        SortPartitionOperator<T> operator =
+                new SortPartitionOperator<>(getType(), clean(keySelector), order);
+        final String opName = "SortPartition";
+        this.setConnectionType(new ForwardPartitioner<>());
+        SingleOutputStreamOperator<T> resultStream =
+                this.transform(opName, getType(), operator)
+                        .setParallelism(transformation.getParallelism());
+        setManagedMemoryWeight(resultStream, 100);
+        return resultStream;
+    }
+
+    /**
      * Applies a reduce transformation on the records of the window. The {@link ReduceFunction} will
      * be called for every record in the window.
      *
@@ -134,7 +142,17 @@ public class PartitionWindowedStream<T> extends DataStream<T> {
      * @return The resulting data stream.
      */
     public DataStream<T> reduce(ReduceFunction<T> reduceFunction) {
-        return null;
+        if (reduceFunction == null) {
+            throw new NullPointerException("ReduceFunction function must not be null.");
+        }
+        reduceFunction = getExecutionEnvironment().clean(reduceFunction);
+        String opName = "PartitionReduce";
+        this.setConnectionType(new ForwardPartitioner<>());
+        return this.transform(
+                        opName,
+                        getTransformation().getOutputType(),
+                        new PartitionReduceOperator<>(reduceFunction))
+                .setParallelism(this.transformation.getParallelism());
     }
 
     /**
@@ -147,7 +165,18 @@ public class PartitionWindowedStream<T> extends DataStream<T> {
      * @param <R> The type of the elements in the resulting stream, equal to the AggregateFunction's
      *     result type.
      */
-    public <ACC, R> DataStream<T> aggregate(AggregateFunction<T, ACC, R> aggregateFunction) {
-        return null;
+    public <ACC, R> DataStream<R> aggregate(AggregateFunction<T, ACC, R> aggregateFunction) {
+        if (aggregateFunction == null) {
+            throw new NullPointerException("ReduceFunction function must not be null.");
+        }
+        aggregateFunction = getExecutionEnvironment().clean(aggregateFunction);
+        String opName = "PartitionAggregate";
+        this.setConnectionType(new ForwardPartitioner<>());
+        TypeInformation<R> resultType =
+                TypeExtractor.getAggregateFunctionReturnType(
+                        aggregateFunction, getType(), opName, true);
+        return this.transform(
+                        opName, resultType, new PartitionAggregateOperator<>(aggregateFunction))
+                .setParallelism(this.transformation.getParallelism());
     }
 }

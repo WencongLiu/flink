@@ -18,59 +18,44 @@
 
 package org.apache.flink.streaming.api.operators;
 
-import org.apache.flink.api.common.functions.MapPartitionFunction;
+import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.streaming.api.graph.StreamConfig;
-import org.apache.flink.streaming.api.operators.mappartition.InternalAsyncProcessor;
-import org.apache.flink.streaming.api.operators.mappartition.QueueAsyncProcessor;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.runtime.tasks.StreamTask;
-import org.apache.flink.util.ExceptionUtils;
 
-/** The {@link MapPartitionOperator} is used to process all records in each partition. */
-public class MapPartitionOperator<IN, OUT>
-        extends AbstractUdfStreamOperator<OUT, MapPartitionFunction<IN, OUT>>
+import static org.apache.flink.util.Preconditions.checkNotNull;
+
+/**
+ * The {@link PartitionAggregateOperator} is used to apply the aggregate transformation on all
+ * records in each partition.
+ */
+public class PartitionAggregateOperator<IN, ACC, OUT>
+        extends AbstractUdfStreamOperator<OUT, AggregateFunction<IN, ACC, OUT>>
         implements OneInputStreamOperator<IN, OUT>, BoundedOneInput {
 
-    private final MapPartitionFunction<IN, OUT> function;
+    private final AggregateFunction<IN, ACC, OUT> aggregateFunction;
+
+    private ACC currentAccumulator = null;
 
     private long lastWatermarkTimestamp = Long.MIN_VALUE;
 
-    private InternalAsyncProcessor<IN> processor;
-
-    public MapPartitionOperator(MapPartitionFunction<IN, OUT> function) {
-        super(function);
-        this.function = function;
+    public PartitionAggregateOperator(AggregateFunction<IN, ACC, OUT> aggregateFunction) {
+        super(aggregateFunction);
+        this.aggregateFunction = aggregateFunction;
     }
 
     @Override
     public void setup(
-            StreamTask<?, ?> containingTask,
-            StreamConfig config,
-            Output<StreamRecord<OUT>> output) {
+            StreamTask<?, ?> containingTask, StreamConfig config, Output<StreamRecord<OUT>> output) {
         super.setup(containingTask, config, output);
-        this.processor = new QueueAsyncProcessor<>();
-        this.processor.registerUDF(
-                iterable -> {
-                    TimestampedCollector<OUT> outputCollector = new TimestampedCollector<>(output);
-                    Watermark watermark = null;
-                    try {
-                        function.mapPartition(iterable, outputCollector);
-                        watermark = new Watermark(lastWatermarkTimestamp);
-                        if (getTimeServiceManager().isPresent()) {
-                            getTimeServiceManager().get().advanceWatermark(watermark);
-                        }
-                    } catch (Exception e) {
-                        ExceptionUtils.rethrow(e);
-                    }
-                    outputCollector.emitWatermark(watermark);
-                    outputCollector.close();
-                });
+        this.currentAccumulator = aggregateFunction.createAccumulator();
     }
 
     @Override
     public void processElement(StreamRecord<IN> element) throws Exception {
-        processor.processRecordAsync(element.getValue());
+        checkNotNull(currentAccumulator);
+        aggregateFunction.add(element.getValue(), currentAccumulator);
     }
 
     @Override
@@ -83,7 +68,13 @@ public class MapPartitionOperator<IN, OUT>
 
     @Override
     public void endInput() throws Exception {
-        processor.close();
+        TimestampedCollector<OUT> outputCollector = new TimestampedCollector<>(output);
+        outputCollector.collect(aggregateFunction.getResult(currentAccumulator));
+        Watermark watermark = new Watermark(lastWatermarkTimestamp);
+        if (getTimeServiceManager().isPresent()) {
+            getTimeServiceManager().get().advanceWatermark(watermark);
+        }
+        outputCollector.emitWatermark(watermark);
     }
 
     @Override

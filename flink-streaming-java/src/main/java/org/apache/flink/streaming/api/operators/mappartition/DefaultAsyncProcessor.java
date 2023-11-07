@@ -92,7 +92,7 @@ public class DefaultAsyncProcessor<T>
     }
 
     @Override
-    public void endOfInput() {
+    public void close() {
         runWithLock(
                 () -> {
                     isEndOfInput = true;
