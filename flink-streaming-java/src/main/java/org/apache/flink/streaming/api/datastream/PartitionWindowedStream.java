@@ -70,8 +70,8 @@ public class PartitionWindowedStream<T> extends DataStream<T> {
         TypeInformation<R> resultType =
                 TypeExtractor.getMapPartitionReturnTypes(
                         mapPartitionFunction, getType(), opName, true);
-        this.setConnectionType(new ForwardPartitioner<>());
-        return this.transform(opName, resultType, new MapPartitionOperator<>(mapPartitionFunction))
+        return this.setConnectionType(new ForwardPartitioner<>())
+                .transform(opName, resultType, new MapPartitionOperator<>(mapPartitionFunction))
                 .setParallelism(this.transformation.getParallelism());
     }
 
