@@ -45,7 +45,7 @@ public class QueueAsyncProcessor<IN>
      * set to 100. As the size of each record is less than 1MB for most scenario, only 100MB of heap
      * memory is needed to store max number of caches.
      */
-    private static final int DEFAULT_MAX_CACHE_NUM = 100;
+    private static final int DEFAULT_MAX_CACHE_NUM = 10000;
 
     /** The lock to ensure consistency between task main thread and udf executor. */
     private final Lock lock = new ReentrantLock();

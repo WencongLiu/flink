@@ -509,7 +509,8 @@ public class StreamGraphGeneratorBatchExecutionTest extends TestLogger {
                                 "InternalSorterAndOutputOnEOFOperator",
                                 BasicTypeInfo.INT_TYPE_INFO,
                                 internalSortOperator);
-        DataStreamSink<Integer> sink = process.addSink((SinkFunction<Integer>) new DiscardingSink<>());
+        DataStreamSink<Integer> sink =
+                process.addSink((SinkFunction<Integer>) new DiscardingSink<>());
         StreamGraph streamGraph = getStreamGraphInBatchMode(sink);
         StreamNode operatorNode = streamGraph.getStreamNode(process.getId());
         assertThat(operatorNode.getInputRequirements().size(), equalTo(2));

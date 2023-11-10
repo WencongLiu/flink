@@ -47,7 +47,9 @@ public class PartitionAggregateOperator<IN, ACC, OUT>
 
     @Override
     public void setup(
-            StreamTask<?, ?> containingTask, StreamConfig config, Output<StreamRecord<OUT>> output) {
+            StreamTask<?, ?> containingTask,
+            StreamConfig config,
+            Output<StreamRecord<OUT>> output) {
         super.setup(containingTask, config, output);
         this.currentAccumulator = aggregateFunction.createAccumulator();
     }

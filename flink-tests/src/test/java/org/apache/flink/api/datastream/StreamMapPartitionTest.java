@@ -19,13 +19,17 @@
 package org.apache.flink.api.datastream;
 
 import org.apache.flink.api.common.RuntimeExecutionMode;
-import org.apache.flink.api.common.functions.RichMapFunction;
+import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.RichMapPartitionFunction;
-import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.ExecutionEnvironment;
+import org.apache.flink.api.java.operators.DataSource;
+import org.apache.flink.api.java.operators.MapOperator;
 import org.apache.flink.streaming.api.datastream.DataStreamSource;
 import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.util.Collector;
+
+import org.junit.jupiter.api.RepeatedTest;
 
 import java.io.Serializable;
 import java.util.ArrayList;
@@ -35,51 +39,94 @@ import java.util.List;
 /** */
 public class StreamMapPartitionTest {
 
-    public static void main(String[] args) throws Exception {
+    @RepeatedTest(10)
+    public void testDataStreamMapPartition() throws Exception {
+        long startTime = System.currentTimeMillis();
         StreamExecutionEnvironment executionEnvironment =
                 StreamExecutionEnvironment.getExecutionEnvironment();
         executionEnvironment.setRuntimeMode(RuntimeExecutionMode.BATCH);
         DataStreamSource<String> source =
                 executionEnvironment.fromCollection(new OneThousandSource(), String.class);
         source.setParallelism(1);
-        SingleOutputStreamOperator<Tuple2<String, Integer>> mapStream =
+        SingleOutputStreamOperator<String> mapStream =
                 source.rebalance()
                         .map(
-                                new RichMapFunction<String, Tuple2<String, Integer>>() {
+                                new MapFunction<String, String>() {
                                     @Override
-                                    public Tuple2<String, Integer> map(String string) {
-                                        return Tuple2.of(
-                                                String.valueOf(
-                                                        getRuntimeContext()
-                                                                .getIndexOfThisSubtask()),
-                                                Integer.valueOf(string));
+                                    public String map(String value) throws Exception {
+                                        return value;
                                     }
                                 });
         mapStream.setParallelism(10);
         mapStream
                 .fullWindowPartition()
                 .mapPartition(
-                        new RichMapPartitionFunction<Tuple2<String, Integer>, String>() {
+                        new RichMapPartitionFunction<String, String>() {
                             @Override
                             public void mapPartition(
-                                    Iterable<Tuple2<String, Integer>> values,
-                                    Collector<String> out) {
+                                    Iterable<String> values, Collector<String> out) {
                                 StringBuilder builder = new StringBuilder();
                                 builder.append("Current Subtask ID: ")
                                         .append(getRuntimeContext().getIndexOfThisSubtask());
                                 int number = 0;
-                                for (Tuple2<String, Integer> value : values) {
+                                for (String value : values) {
                                     ++number;
                                 }
                                 builder.append(" ").append(number).append(" records.");
                                 out.collect(builder.toString());
                             }
-                        }).print();
+                        })
+                .print();
         executionEnvironment.execute();
+        long endTime = System.currentTimeMillis();
+        long executionTime = endTime - startTime;
+        double seconds = executionTime / 1000.0;
+        System.out.println("testDataStreamMapPartition：" + seconds + " second");
+    }
+
+    @RepeatedTest(10)
+    public void testDataSetMapPartition() throws Exception {
+        long startTime = System.currentTimeMillis();
+        ExecutionEnvironment executionEnvironment = ExecutionEnvironment.getExecutionEnvironment();
+        DataSource<String> source =
+                executionEnvironment.fromCollection(new OneThousandSource(), String.class);
+        source.setParallelism(1);
+        MapOperator<String, String> mapStream =
+                source
+                        .map(
+                                new MapFunction<String, String>() {
+                                    @Override
+                                    public String map(String value) throws Exception {
+                                        return value;
+                                    }
+                                });
+        mapStream.setParallelism(10);
+        mapStream
+                .mapPartition(
+                        new RichMapPartitionFunction<String, String>() {
+                            @Override
+                            public void mapPartition(
+                                    Iterable<String> values, Collector<String> out) {
+                                StringBuilder builder = new StringBuilder();
+                                builder.append("Current Subtask ID: ")
+                                        .append(getRuntimeContext().getIndexOfThisSubtask());
+                                int number = 0;
+                                for (String value : values) {
+                                    ++number;
+                                }
+                                builder.append(" ").append(number).append(" records.");
+                                out.collect(builder.toString());
+                            }
+                        })
+                .print();
+        //executionEnvironment.execute();
+        long endTime = System.currentTimeMillis();
+        long executionTime = endTime - startTime;
+        double seconds = executionTime / 1000.0;
+        System.out.println("testDataSetMapPartition：" + seconds + " second");
     }
 
     static class OneThousandSource implements Iterator<String>, Serializable {
-
         private static final int TOTAL_NUMBER = 1000000;
 
         private int currentPosition = 0;

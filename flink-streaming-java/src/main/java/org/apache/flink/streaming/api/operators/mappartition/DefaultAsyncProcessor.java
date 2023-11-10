@@ -142,7 +142,7 @@ public class DefaultAsyncProcessor<T>
                     } catch (InterruptedException e) {
                         ExceptionUtils.rethrow(e);
                     }
-                    if(nextRecord == null){
+                    if (nextRecord == null) {
                         checkState(isEndOfInput);
                         return null;
                     }
