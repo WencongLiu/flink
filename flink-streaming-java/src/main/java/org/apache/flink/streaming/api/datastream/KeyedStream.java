@@ -1050,6 +1050,18 @@ public class KeyedStream<T, KEY> extends DataStream<T> {
         return reduce(aggregate).name("Keyed Aggregation");
     }
 
+    @Override
+    public PartitionWindowedStream<T> fullWindowPartition() {
+        return super.fullWindowPartition();
+    }
+
+    //public class KeyPartitionWindowedStream<T> extends PartitionWindowedStream<T> {
+    //    public KeyPartitionWindowedStream(
+    //            StreamExecutionEnvironment environment, Transformation<T> transformation, KeyedStream<T, KEY> keyedStream) {
+    //        super(environment, transformation);
+    //    }
+    //}
+
     /**
      * Publishes the keyed stream as queryable ValueState instance.
      *

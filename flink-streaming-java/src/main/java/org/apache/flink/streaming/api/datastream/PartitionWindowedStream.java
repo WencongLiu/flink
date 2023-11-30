@@ -24,7 +24,6 @@ import org.apache.flink.api.common.functions.MapPartitionFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.common.operators.Order;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.api.dag.Transformation;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
@@ -44,11 +43,16 @@ import java.util.Iterator;
  * @param <T> The type of the elements in this data stream.
  */
 @PublicEvolving
-public class PartitionWindowedStream<T> extends DataStream<T> {
+public class PartitionWindowedStream<T> {
+
+    private final StreamExecutionEnvironment environment;
+
+    private final DataStream<T> dataStream;
 
     public PartitionWindowedStream(
-            StreamExecutionEnvironment environment, Transformation<T> transformation) {
-        super(environment, transformation);
+            StreamExecutionEnvironment environment, DataStream<T> dataStream) {
+        this.environment = environment;
+        this.dataStream = dataStream;
     }
 
     /**
@@ -65,14 +69,15 @@ public class PartitionWindowedStream<T> extends DataStream<T> {
         if (mapPartitionFunction == null) {
             throw new NullPointerException("MapPartition function must not be null.");
         }
-        mapPartitionFunction = getExecutionEnvironment().clean(mapPartitionFunction);
+        mapPartitionFunction = environment.clean(mapPartitionFunction);
         String opName = "MapPartition";
         TypeInformation<R> resultType =
                 TypeExtractor.getMapPartitionReturnTypes(
-                        mapPartitionFunction, getType(), opName, true);
-        return this.setConnectionType(new ForwardPartitioner<>())
+                        mapPartitionFunction, dataStream.getType(), opName, true);
+        return dataStream
+                .setConnectionType(new ForwardPartitioner<>())
                 .transform(opName, resultType, new MapPartitionOperator<>(mapPartitionFunction))
-                .setParallelism(this.transformation.getParallelism());
+                .setParallelism(dataStream.getParallelism());
     }
 
     /**
@@ -84,13 +89,15 @@ public class PartitionWindowedStream<T> extends DataStream<T> {
      * @return The resulting data stream with sorted records in each subtask.
      */
     public DataStream<T> sortPartition(int field, Order order) {
-        SortPartitionOperator<T> operator = new SortPartitionOperator<>(getType(), field, order);
+        SortPartitionOperator<T> operator =
+                new SortPartitionOperator<>(dataStream.getType(), field, order);
         final String opName = "SortPartition";
-        this.setConnectionType(new ForwardPartitioner<>());
         SingleOutputStreamOperator<T> resultStream =
-                this.transform(opName, getType(), operator)
-                        .setParallelism(this.transformation.getParallelism());
-        setManagedMemoryWeight(resultStream, 100);
+                dataStream
+                        .setConnectionType(new ForwardPartitioner<>())
+                        .transform(opName, dataStream.getType(), operator)
+                        .setParallelism(dataStream.getParallelism());
+        DataStream.setManagedMemoryWeight(resultStream, 100);
         return resultStream;
     }
 
@@ -105,13 +112,15 @@ public class PartitionWindowedStream<T> extends DataStream<T> {
      * @return The resulting data stream with sorted records in each subtask.
      */
     public DataStream<T> sortPartition(String field, Order order) {
-        SortPartitionOperator<T> operator = new SortPartitionOperator<>(getType(), field, order);
+        SortPartitionOperator<T> operator =
+                new SortPartitionOperator<>(dataStream.getType(), field, order);
         final String opName = "SortPartition";
-        this.setConnectionType(new ForwardPartitioner<>());
         SingleOutputStreamOperator<T> resultStream =
-                this.transform(opName, getType(), operator)
-                        .setParallelism(this.transformation.getParallelism());
-        setManagedMemoryWeight(resultStream, 100);
+                dataStream
+                        .setConnectionType(new ForwardPartitioner<>())
+                        .transform(opName, dataStream.getType(), operator)
+                        .setParallelism(dataStream.getParallelism());
+        DataStream.setManagedMemoryWeight(resultStream, 100);
         return resultStream;
     }
 
@@ -124,13 +133,15 @@ public class PartitionWindowedStream<T> extends DataStream<T> {
      */
     public <K> DataStream<T> sortPartition(KeySelector<T, K> keySelector, Order order) {
         SortPartitionOperator<T> operator =
-                new SortPartitionOperator<>(getType(), clean(keySelector), order);
+                new SortPartitionOperator<>(
+                        dataStream.getType(), environment.clean(keySelector), order);
         final String opName = "SortPartition";
-        this.setConnectionType(new ForwardPartitioner<>());
         SingleOutputStreamOperator<T> resultStream =
-                this.transform(opName, getType(), operator)
-                        .setParallelism(transformation.getParallelism());
-        setManagedMemoryWeight(resultStream, 100);
+                dataStream
+                        .setConnectionType(new ForwardPartitioner<>())
+                        .transform(opName, dataStream.getType(), operator)
+                        .setParallelism(dataStream.getParallelism());
+        DataStream.setManagedMemoryWeight(resultStream, 100);
         return resultStream;
     }
 
@@ -145,14 +156,15 @@ public class PartitionWindowedStream<T> extends DataStream<T> {
         if (reduceFunction == null) {
             throw new NullPointerException("ReduceFunction function must not be null.");
         }
-        reduceFunction = getExecutionEnvironment().clean(reduceFunction);
+        reduceFunction = environment.clean(reduceFunction);
         String opName = "PartitionReduce";
-        this.setConnectionType(new ForwardPartitioner<>());
-        return this.transform(
+        return dataStream
+                .setConnectionType(new ForwardPartitioner<>())
+                .transform(
                         opName,
-                        getTransformation().getOutputType(),
+                        dataStream.getTransformation().getOutputType(),
                         new PartitionReduceOperator<>(reduceFunction))
-                .setParallelism(this.transformation.getParallelism());
+                .setParallelism(dataStream.getParallelism());
     }
 
     /**
@@ -169,14 +181,14 @@ public class PartitionWindowedStream<T> extends DataStream<T> {
         if (aggregateFunction == null) {
             throw new NullPointerException("ReduceFunction function must not be null.");
         }
-        aggregateFunction = getExecutionEnvironment().clean(aggregateFunction);
+        aggregateFunction = environment.clean(aggregateFunction);
         String opName = "PartitionAggregate";
-        this.setConnectionType(new ForwardPartitioner<>());
         TypeInformation<R> resultType =
                 TypeExtractor.getAggregateFunctionReturnType(
-                        aggregateFunction, getType(), opName, true);
-        return this.transform(
-                        opName, resultType, new PartitionAggregateOperator<>(aggregateFunction))
-                .setParallelism(this.transformation.getParallelism());
+                        aggregateFunction, dataStream.getType(), opName, true);
+        return dataStream
+                .setConnectionType(new ForwardPartitioner<>())
+                .transform(opName, resultType, new PartitionAggregateOperator<>(aggregateFunction))
+                .setParallelism(dataStream.getParallelism());
     }
 }

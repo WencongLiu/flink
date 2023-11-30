@@ -1448,7 +1448,7 @@ public class DataStream<T> {
      * @return The data stream full windowed on each subtask.
      */
     public PartitionWindowedStream<T> fullWindowPartition() {
-        return new PartitionWindowedStream<>(environment, getTransformation());
+        return new PartitionWindowedStream<>(environment, this);
     }
 
     protected static <T> void setManagedMemoryWeight(DataStream<T> dataStream, long memoryBytes) {
