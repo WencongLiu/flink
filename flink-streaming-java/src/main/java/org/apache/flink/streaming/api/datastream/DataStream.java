@@ -1446,7 +1446,7 @@ public class DataStream<T> {
      * @return The data stream full windowed on each subtask.
      */
     public PartitionWindowedStream<T> fullWindowPartition() {
-        return new PartitionWindowedStream<>(environment, this);
+        return new NonKeyedPartitionWindowedStream<>(environment, this);
     }
 
     /**

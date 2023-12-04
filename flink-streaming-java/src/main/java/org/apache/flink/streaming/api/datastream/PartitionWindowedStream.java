@@ -23,16 +23,8 @@ import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.functions.MapPartitionFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.common.operators.Order;
-import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.functions.KeySelector;
 import org.apache.flink.api.java.tuple.Tuple;
-import org.apache.flink.api.java.typeutils.TypeExtractor;
-import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.operators.MapPartitionOperator;
-import org.apache.flink.streaming.api.operators.PartitionAggregateOperator;
-import org.apache.flink.streaming.api.operators.PartitionReduceOperator;
-import org.apache.flink.streaming.api.operators.SortPartitionOperator;
-import org.apache.flink.streaming.runtime.partitioner.ForwardPartitioner;
 
 import java.util.Iterator;
 
@@ -45,16 +37,7 @@ import java.util.Iterator;
  * @param <T> The type of the elements in this stream.
  */
 @PublicEvolving
-public class PartitionWindowedStream<T> {
-
-    private final StreamExecutionEnvironment environment;
-
-    private final DataStream<T> input;
-
-    public PartitionWindowedStream(StreamExecutionEnvironment environment, DataStream<T> input) {
-        this.environment = environment;
-        this.input = input;
-    }
+public interface PartitionWindowedStream<T> {
 
     /**
      * Process the records of the window by {@link MapPartitionFunction}. The records will be
@@ -66,19 +49,7 @@ public class PartitionWindowedStream<T> {
      * @param <R> The type of the elements in the resulting stream, equal to the
      *     MapPartitionFunction's result type.
      */
-    public <R> DataStream<R> mapPartition(MapPartitionFunction<T, R> mapPartitionFunction) {
-        if (mapPartitionFunction == null) {
-            throw new NullPointerException("The map partition function must not be null.");
-        }
-        mapPartitionFunction = environment.clean(mapPartitionFunction);
-        String opName = "MapPartition";
-        TypeInformation<R> resultType =
-                TypeExtractor.getMapPartitionReturnTypes(
-                        mapPartitionFunction, input.getType(), opName, true);
-        return input.setConnectionType(new ForwardPartitioner<>())
-                .transform(opName, resultType, new MapPartitionOperator<>(mapPartitionFunction))
-                .setParallelism(input.getParallelism());
-    }
+    <R> DataStream<R> mapPartition(MapPartitionFunction<T, R> mapPartitionFunction);
 
     /**
      * Sorts the records of the window on the specified field in the specified order. The type of
@@ -88,17 +59,7 @@ public class PartitionWindowedStream<T> {
      * @param order The order in which records is sorted.
      * @return The resulting data stream with sorted records in each subtask.
      */
-    public DataStream<T> sortPartition(int field, Order order) {
-        if (order == null) {
-            throw new IllegalArgumentException("The order must not be null.");
-        }
-        SortPartitionOperator<T> operator =
-                new SortPartitionOperator<>(input.getType(), field, order);
-        final String opName = "SortPartition";
-        return input.setConnectionType(new ForwardPartitioner<>())
-                .transform(opName, input.getType(), operator)
-                .setParallelism(input.getParallelism());
-    }
+    DataStream<T> sortPartition(int field, Order order);
 
     /**
      * Sorts the records of the window on the specified field in the specified order. The type of
@@ -110,20 +71,7 @@ public class PartitionWindowedStream<T> {
      * @param order The order in which records is sorted.
      * @return The resulting data stream with sorted records in each subtask.
      */
-    public DataStream<T> sortPartition(String field, Order order) {
-        if (field == null) {
-            throw new IllegalArgumentException("The field must not be null.");
-        }
-        if (order == null) {
-            throw new IllegalArgumentException("The order must not be null.");
-        }
-        SortPartitionOperator<T> operator =
-                new SortPartitionOperator<>(input.getType(), field, order);
-        final String opName = "SortPartition";
-        return input.setConnectionType(new ForwardPartitioner<>())
-                .transform(opName, input.getType(), operator)
-                .setParallelism(input.getParallelism());
-    }
+    DataStream<T> sortPartition(String field, Order order);
 
     /**
      * Sorts the records of the window on the extracted key in the specified order.
@@ -132,20 +80,7 @@ public class PartitionWindowedStream<T> {
      * @param order The order in which records is sorted.
      * @return The resulting data stream with sorted records in each subtask.
      */
-    public <K> DataStream<T> sortPartition(KeySelector<T, K> keySelector, Order order) {
-        if (keySelector == null) {
-            throw new IllegalArgumentException("The key selector must not be null.");
-        }
-        if (order == null) {
-            throw new IllegalArgumentException("The order must not be null.");
-        }
-        SortPartitionOperator<T> operator =
-                new SortPartitionOperator<>(input.getType(), environment.clean(keySelector), order);
-        final String opName = "SortPartition";
-        return input.setConnectionType(new ForwardPartitioner<>())
-                .transform(opName, input.getType(), operator)
-                .setParallelism(input.getParallelism());
-    }
+    <K> DataStream<T> sortPartition(KeySelector<T, K> keySelector, Order order);
 
     /**
      * Applies a reduce transformation on the records of the window. The {@link ReduceFunction} will
@@ -154,19 +89,7 @@ public class PartitionWindowedStream<T> {
      * @param reduceFunction The reduce function.
      * @return The resulting data stream.
      */
-    public DataStream<T> reduce(ReduceFunction<T> reduceFunction) {
-        if (reduceFunction == null) {
-            throw new IllegalArgumentException("The reduce function must not be null.");
-        }
-        reduceFunction = environment.clean(reduceFunction);
-        String opName = "PartitionReduce";
-        return input.setConnectionType(new ForwardPartitioner<>())
-                .transform(
-                        opName,
-                        input.getTransformation().getOutputType(),
-                        new PartitionReduceOperator<>(reduceFunction))
-                .setParallelism(input.getParallelism());
-    }
+    DataStream<T> reduce(ReduceFunction<T> reduceFunction);
 
     /**
      * Applies the given aggregate function to the records of the window. The aggregate function is
@@ -178,17 +101,5 @@ public class PartitionWindowedStream<T> {
      * @param <R> The type of the elements in the resulting stream, equal to the AggregateFunction's
      *     result type.
      */
-    public <ACC, R> DataStream<R> aggregate(AggregateFunction<T, ACC, R> aggregateFunction) {
-        if (aggregateFunction == null) {
-            throw new IllegalArgumentException("The aggregate function must not be null.");
-        }
-        aggregateFunction = environment.clean(aggregateFunction);
-        String opName = "PartitionAggregate";
-        TypeInformation<R> resultType =
-                TypeExtractor.getAggregateFunctionReturnType(
-                        aggregateFunction, input.getType(), opName, true);
-        return input.setConnectionType(new ForwardPartitioner<>())
-                .transform(opName, resultType, new PartitionAggregateOperator<>(aggregateFunction))
-                .setParallelism(input.getParallelism());
-    }
+    <ACC, R> DataStream<R> aggregate(AggregateFunction<T, ACC, R> aggregateFunction);
 }

@@ -1052,15 +1052,8 @@ public class KeyedStream<T, KEY> extends DataStream<T> {
 
     @Override
     public PartitionWindowedStream<T> fullWindowPartition() {
-        return super.fullWindowPartition();
+        return new KeyedPartitionWindowedStream<>(environment, this);
     }
-
-    //public class KeyPartitionWindowedStream<T> extends PartitionWindowedStream<T> {
-    //    public KeyPartitionWindowedStream(
-    //            StreamExecutionEnvironment environment, Transformation<T> transformation, KeyedStream<T, KEY> keyedStream) {
-    //        super(environment, transformation);
-    //    }
-    //}
 
     /**
      * Publishes the keyed stream as queryable ValueState instance.

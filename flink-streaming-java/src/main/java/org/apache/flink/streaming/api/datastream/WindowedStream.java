@@ -267,6 +267,8 @@ public class WindowedStream<T, K, W extends Window> {
         return input.transform(opName, resultType, operator).setDescription(opDescription);
     }
 
+
+
     // ------------------------------------------------------------------------
     //  Aggregation Function
     // ------------------------------------------------------------------------
