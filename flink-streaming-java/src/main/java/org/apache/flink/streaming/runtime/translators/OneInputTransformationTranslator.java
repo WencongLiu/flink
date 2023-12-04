@@ -80,17 +80,15 @@ public final class OneInputTransformationTranslator<IN, OUT>
             final OneInputTransformation<IN, OUT> transformation, final Context context) {
         KeySelector<IN, ?> keySelector = transformation.getStateKeySelector();
         boolean isKeyed = keySelector != null;
-        if (isKeyed) {
-            StreamConfig.InputRequirement inputRequirement;
-            if (!transformation.isInternalSorterSupported()) {
-                inputRequirement = StreamConfig.InputRequirement.SORTED;
-            } else {
-                // The inputs of transformation don't require InputRequirement.SORTED
-                // if the transformation support internal sorter.
-                inputRequirement = StreamConfig.InputRequirement.PASS_THROUGH;
-            }
-            BatchExecutionUtils.applyBatchExecutionSettings(
-                    transformation.getId(), context, inputRequirement);
+        StreamConfig.InputRequirement inputRequirement;
+        if (!transformation.isInternalSorterSupported()) {
+            inputRequirement = StreamConfig.InputRequirement.SORTED;
+        } else {
+            // The inputs of transformation don't require InputRequirement.SORTED
+            // if the transformation support internal sorter.
+            inputRequirement = StreamConfig.InputRequirement.PASS_THROUGH;
         }
+        BatchExecutionUtils.applyBatchExecutionSettings(
+                transformation.getId(), context, inputRequirement);
     }
 }
