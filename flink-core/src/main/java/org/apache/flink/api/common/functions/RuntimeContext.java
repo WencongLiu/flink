@@ -22,6 +22,7 @@ import org.apache.flink.annotation.Public;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.JobID;
+import org.apache.flink.api.common.JobInfo;
 import org.apache.flink.api.common.accumulators.Accumulator;
 import org.apache.flink.api.common.accumulators.DoubleCounter;
 import org.apache.flink.api.common.accumulators.Histogram;
@@ -440,4 +441,20 @@ public interface RuntimeContext {
      */
     @PublicEvolving
     <UK, UV> MapState<UK, UV> getMapState(MapStateDescriptor<UK, UV> stateProperties);
+
+    /**
+     * Get the meta information of current job.
+     *
+     * @return the job meta information.
+     */
+    @PublicEvolving
+    JobInfo getJobInfo();
+
+    /**
+     * Get the meta information of current task.
+     *
+     * @return the task meta information.
+     */
+    @PublicEvolving
+    TaskInfo getTaskInfo();
 }

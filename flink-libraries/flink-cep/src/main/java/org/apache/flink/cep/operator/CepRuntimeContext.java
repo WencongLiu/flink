@@ -29,7 +29,9 @@ import org.apache.flink.api.common.accumulators.LongCounter;
 import org.apache.flink.api.common.cache.DistributedCache;
 import org.apache.flink.api.common.externalresource.ExternalResourceInfo;
 import org.apache.flink.api.common.functions.BroadcastVariableInitializer;
+import org.apache.flink.api.common.JobInfo;
 import org.apache.flink.api.common.functions.RuntimeContext;
+import org.apache.flink.api.common.functions.TaskInfo;
 import org.apache.flink.api.common.state.AggregatingState;
 import org.apache.flink.api.common.state.AggregatingStateDescriptor;
 import org.apache.flink.api.common.state.ListState;
@@ -128,6 +130,16 @@ class CepRuntimeContext implements RuntimeContext {
     @Override
     public Set<ExternalResourceInfo> getExternalResourceInfos(String resourceName) {
         return runtimeContext.getExternalResourceInfos(resourceName);
+    }
+
+    @Override
+    public JobInfo getJobInfo() {
+        return runtimeContext.getJobInfo();
+    }
+
+    @Override
+    public TaskInfo getTaskInfo() {
+        return runtimeContext.getTaskInfo();
     }
 
     // -----------------------------------------------------------------------------------

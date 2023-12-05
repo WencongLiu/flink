@@ -18,15 +18,13 @@
 
 package org.apache.flink.api.common;
 
-import org.apache.flink.annotation.Internal;
+import org.apache.flink.annotation.PublicEvolving;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
-/**
- * Encapsulates task-specific information: name, index of subtask, parallelism and attempt number.
- */
-@Internal
+/** The {@link TaskInfo} represents the meta information of current task. */
+@PublicEvolving
 public class TaskInfo {
 
     private final String taskName;
