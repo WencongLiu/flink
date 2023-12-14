@@ -20,6 +20,7 @@ package org.apache.flink.streaming.api.datastream;
 
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.functions.MapPartitionFunction;
+import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.windowing.assigners.EndOfStreamWindows;
 
@@ -47,5 +48,14 @@ public class KeyedPartitionWindowedStream<T, KEY> implements PartitionWindowedSt
             throw new NullPointerException("The map partition function must not be null.");
         }
         return input.window(EndOfStreamWindows.get()).apply(mapPartitionFunction);
+    }
+
+    @Override
+    public SingleOutputStreamOperator<T> reduce(ReduceFunction<T> reduceFunction) {
+        if (reduceFunction == null) {
+            throw new IllegalArgumentException("The reduce function must not be null.");
+        }
+        reduceFunction = environment.clean(reduceFunction);
+        return input.window(EndOfStreamWindows.get()).reduce(reduceFunction);
     }
 }
