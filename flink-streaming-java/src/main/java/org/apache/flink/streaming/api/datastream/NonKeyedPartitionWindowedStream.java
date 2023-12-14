@@ -22,12 +22,16 @@ import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.functions.MapPartitionFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
+import org.apache.flink.api.common.operators.Order;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.java.functions.KeySelector;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.operators.MapPartitionOperator;
 import org.apache.flink.streaming.api.operators.PartitionAggregateOperator;
 import org.apache.flink.streaming.api.operators.PartitionReduceOperator;
+import org.apache.flink.streaming.api.operators.sort.NonKeyedSortPartitionOperator;
 import org.apache.flink.streaming.runtime.partitioner.ForwardPartitioner;
 
 /**
@@ -89,6 +93,50 @@ public class NonKeyedPartitionWindowedStream<T> implements PartitionWindowedStre
                         aggregateFunction, input.getType(), opName, true);
         return input.setConnectionType(new ForwardPartitioner<>())
                 .transform(opName, resultType, new PartitionAggregateOperator<>(aggregateFunction))
+                .setFixedParallelism(input.getParallelism());
+    }
+
+    public SingleOutputStreamOperator<T> sortPartition(int field, Order order) {
+        if (order == null) {
+            throw new IllegalArgumentException("The order must not be null.");
+        }
+        NonKeyedSortPartitionOperator<T, T> operator =
+                new NonKeyedSortPartitionOperator<>(input.getType(), field, order);
+        final String opName = "SortPartition";
+        return input.setConnectionType(new ForwardPartitioner<>())
+                .transform(opName, input.getType(), operator)
+                .setFixedParallelism(input.getParallelism());
+    }
+
+    public SingleOutputStreamOperator<T> sortPartition(String field, Order order) {
+        if (field == null) {
+            throw new IllegalArgumentException("The field must not be null.");
+        }
+        if (order == null) {
+            throw new IllegalArgumentException("The order must not be null.");
+        }
+        NonKeyedSortPartitionOperator<T, T> operator =
+                new NonKeyedSortPartitionOperator<>(input.getType(), field, order);
+        final String opName = "SortPartition";
+        return input.setConnectionType(new ForwardPartitioner<>())
+                .transform(opName, input.getType(), operator)
+                .setFixedParallelism(input.getParallelism());
+    }
+
+    public <K> SingleOutputStreamOperator<T> sortPartition(
+            KeySelector<T, K> keySelector, Order order) {
+        if (keySelector == null) {
+            throw new IllegalArgumentException("The key selector must not be null.");
+        }
+        if (order == null) {
+            throw new IllegalArgumentException("The order must not be null.");
+        }
+        NonKeyedSortPartitionOperator<T, Tuple2<?, T>> operator =
+                new NonKeyedSortPartitionOperator<>(
+                        input.getType(), environment.clean(keySelector), order);
+        final String opName = "SortPartition";
+        return input.setConnectionType(new ForwardPartitioner<>())
+                .transform(opName, input.getType(), operator)
                 .setFixedParallelism(input.getParallelism());
     }
 }

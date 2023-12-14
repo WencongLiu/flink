@@ -22,6 +22,9 @@ import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.functions.MapPartitionFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
+import org.apache.flink.api.common.operators.Order;
+import org.apache.flink.api.java.functions.KeySelector;
+import org.apache.flink.api.java.tuple.Tuple;
 
 import java.util.Iterator;
 
@@ -69,4 +72,41 @@ public interface PartitionWindowedStream<T> {
      */
     <ACC, R> SingleOutputStreamOperator<R> aggregate(
             AggregateFunction<T, ACC, R> aggregateFunction);
+
+    /**
+     * Sorts the records of the window on the specified field in the specified order. The type of
+     * records must be {@link Tuple}.
+     *
+     * @param field The field index on which records is sorted.
+     * @param order The order in which records is sorted.
+     * @return The resulting data stream with sorted records in each partition.
+     */
+    SingleOutputStreamOperator<T> sortPartition(int field, Order order);
+
+    /**
+     * Sorts the records of the window on the specified field in the specified order. The type of
+     * records must be Flink POJO. A Flink POJO type should fulfill the following conditions:
+     *
+     * <ul>
+     *   <li>It is a public static class.
+     *   <li>It has a public no-argument constructor.
+     *   <li>All non-static, non-transient fields in the class (and all superclasses) are either
+     *       public (and non-final) or have a public getter and a setter method that follows the
+     *       Java beans naming conventions for getters and setters.
+     * </ul>
+     *
+     * @param field The field expression referring to the field on which records is sorted.
+     * @param order The order in which records is sorted.
+     * @return The resulting data stream with sorted records in each partition.
+     */
+    SingleOutputStreamOperator<T> sortPartition(String field, Order order);
+
+    /**
+     * Sorts the records of the window on the extracted key in the specified order.
+     *
+     * @param keySelector The KeySelector function which extracts the key values from records.
+     * @param order The order in which records is sorted.
+     * @return The resulting data stream with sorted records in each partition.
+     */
+    <K> SingleOutputStreamOperator<T> sortPartition(KeySelector<T, K> keySelector, Order order);
 }
