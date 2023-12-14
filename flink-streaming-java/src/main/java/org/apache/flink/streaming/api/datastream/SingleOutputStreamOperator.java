@@ -31,6 +31,7 @@ import org.apache.flink.streaming.api.operators.ChainingStrategy;
 import org.apache.flink.streaming.api.transformations.PhysicalTransformation;
 import org.apache.flink.streaming.api.transformations.SideOutputTransformation;
 import org.apache.flink.util.OutputTag;
+import org.apache.flink.util.Preconditions;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -49,6 +50,9 @@ public class SingleOutputStreamOperator<T> extends DataStream<T> {
 
     /** Indicate this is a non-parallel operator and cannot set a non-1 degree of parallelism. * */
     protected boolean nonParallel = false;
+
+    /** Indicate the parallelism is fixed and cannot be set. */
+    protected boolean parallelismIsFixed = false;
 
     /**
      * We keep track of the side outputs that were already requested and their types. With this, we
@@ -136,10 +140,25 @@ public class SingleOutputStreamOperator<T> extends DataStream<T> {
      * @return The operator with set parallelism.
      */
     public SingleOutputStreamOperator<T> setParallelism(int parallelism) {
+        Preconditions.checkState(
+                !parallelismIsFixed, "The parallelism is fixed and cannot be modified.");
         OperatorValidationUtils.validateParallelism(parallelism, canBeParallel());
         transformation.setParallelism(parallelism);
 
         return this;
+    }
+
+    /**
+     * Sets the fixed parallelism for this operator. This operator cannot change the parallelism
+     * after this method is invoked.
+     *
+     * @param parallelism The fixed parallelism for this operator.
+     * @return The operator with set fixed parallelism.
+     */
+    public SingleOutputStreamOperator<T> setFixedParallelism(int parallelism) {
+        SingleOutputStreamOperator<T> resultStream = setParallelism(parallelism);
+        parallelismIsFixed = true;
+        return resultStream;
     }
 
     /**
@@ -153,6 +172,8 @@ public class SingleOutputStreamOperator<T> extends DataStream<T> {
      */
     @PublicEvolving
     public SingleOutputStreamOperator<T> setMaxParallelism(int maxParallelism) {
+        Preconditions.checkState(
+                !parallelismIsFixed, "The parallelism is fixed and cannot be modified.");
         OperatorValidationUtils.validateMaxParallelism(maxParallelism, canBeParallel());
         transformation.setMaxParallelism(maxParallelism);
 
@@ -204,6 +225,8 @@ public class SingleOutputStreamOperator<T> extends DataStream<T> {
      */
     @PublicEvolving
     public SingleOutputStreamOperator<T> forceNonParallel() {
+        Preconditions.checkState(
+                !parallelismIsFixed, "The parallelism is fixed and cannot be modified.");
         transformation.setParallelism(1);
         transformation.setMaxParallelism(1);
         nonParallel = true;

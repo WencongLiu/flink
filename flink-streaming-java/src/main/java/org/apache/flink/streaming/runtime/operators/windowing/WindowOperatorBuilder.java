@@ -22,6 +22,7 @@ import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.functions.Function;
+import org.apache.flink.api.common.functions.MapPartitionFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.common.functions.RichFunction;
 import org.apache.flink.api.common.state.AggregatingStateDescriptor;
@@ -45,6 +46,7 @@ import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.triggers.Trigger;
 import org.apache.flink.streaming.api.windowing.windows.Window;
 import org.apache.flink.streaming.runtime.operators.windowing.functions.InternalAggregateProcessWindowFunction;
+import org.apache.flink.streaming.runtime.operators.windowing.functions.InternalIterableMapPartitionFunction;
 import org.apache.flink.streaming.runtime.operators.windowing.functions.InternalIterableProcessWindowFunction;
 import org.apache.flink.streaming.runtime.operators.windowing.functions.InternalIterableWindowFunction;
 import org.apache.flink.streaming.runtime.operators.windowing.functions.InternalSingleValueProcessWindowFunction;
@@ -243,6 +245,11 @@ public class WindowOperatorBuilder<T, K, W extends Window> {
     public <R> WindowOperator<K, T, ?, R, W> apply(WindowFunction<T, R, K, W> function) {
         Preconditions.checkNotNull(function, "WindowFunction cannot be null");
         return apply(new InternalIterableWindowFunction<>(function));
+    }
+
+    public <R> WindowOperator<K, T, ?, R, W> apply(MapPartitionFunction<T, R> function) {
+        Preconditions.checkNotNull(function, "MapPartitionFunction cannot be null");
+        return apply(new InternalIterableMapPartitionFunction<>(function));
     }
 
     public <R> WindowOperator<K, T, ?, R, W> process(ProcessWindowFunction<T, R, K, W> function) {

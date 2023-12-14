@@ -19,7 +19,9 @@
 package org.apache.flink.streaming.api.datastream;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.api.common.functions.MapPartitionFunction;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.windowing.assigners.EndOfStreamWindows;
 
 /**
  * {@link KeyedPartitionWindowedStream} represents a data stream that collects all records with the
@@ -36,5 +38,14 @@ public class KeyedPartitionWindowedStream<T, KEY> implements PartitionWindowedSt
             StreamExecutionEnvironment environment, KeyedStream<T, KEY> input) {
         this.environment = environment;
         this.input = input;
+    }
+
+    @Override
+    public <R> SingleOutputStreamOperator<R> mapPartition(
+            MapPartitionFunction<T, R> mapPartitionFunction) {
+        if (mapPartitionFunction == null) {
+            throw new NullPointerException("The map partition function must not be null.");
+        }
+        return input.window(EndOfStreamWindows.get()).apply(mapPartitionFunction);
     }
 }

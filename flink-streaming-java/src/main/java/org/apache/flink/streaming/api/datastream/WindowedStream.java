@@ -23,6 +23,7 @@ import org.apache.flink.annotation.Public;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.functions.AggregateFunction;
+import org.apache.flink.api.common.functions.MapPartitionFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.common.functions.RichFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -572,6 +573,28 @@ public class WindowedStream<T, K, W extends Window> {
      */
     public <R> SingleOutputStreamOperator<R> apply(
             WindowFunction<T, R, K, W> function, TypeInformation<R> resultType) {
+        function = input.getExecutionEnvironment().clean(function);
+
+        final String opName = builder.generateOperatorName();
+        final String opDescription = builder.generateOperatorDescription(function, null);
+        OneInputStreamOperator<T, R> operator = builder.apply(function);
+
+        return input.transform(opName, resultType, operator).setDescription(opDescription);
+    }
+
+    /**
+     * Applies the given map partition function to each window. The map partition function is called
+     * for each evaluation of the window for each key individually. The output of the map partition
+     * function is interpreted as a regular non-windowed stream.
+     *
+     * @param function The map partition function.
+     * @return The data stream that is the result of applying the map partition function to the
+     *     window.
+     */
+    public <R> SingleOutputStreamOperator<R> apply(MapPartitionFunction<T, R> function) {
+        TypeInformation<R> resultType =
+                TypeExtractor.getMapPartitionReturnTypes(
+                        function, input.getType(), "MapPartition", true);
         function = input.getExecutionEnvironment().clean(function);
 
         final String opName = builder.generateOperatorName();
