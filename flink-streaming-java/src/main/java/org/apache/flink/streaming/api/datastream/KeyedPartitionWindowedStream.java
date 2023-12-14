@@ -19,6 +19,7 @@
 package org.apache.flink.streaming.api.datastream;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.functions.MapPartitionFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -57,5 +58,15 @@ public class KeyedPartitionWindowedStream<T, KEY> implements PartitionWindowedSt
         }
         reduceFunction = environment.clean(reduceFunction);
         return input.window(EndOfStreamWindows.get()).reduce(reduceFunction);
+    }
+
+    @Override
+    public <ACC, R> SingleOutputStreamOperator<R> aggregate(
+            AggregateFunction<T, ACC, R> aggregateFunction) {
+        if (aggregateFunction == null) {
+            throw new IllegalArgumentException("The aggregate function must not be null.");
+        }
+        aggregateFunction = environment.clean(aggregateFunction);
+        return input.window(EndOfStreamWindows.get()).aggregate(aggregateFunction);
     }
 }
