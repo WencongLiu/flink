@@ -1071,6 +1071,13 @@ public class KeyedStream<T, KEY> extends DataStream<T> {
         return reduce(aggregate).name("Keyed Aggregation");
     }
 
+    @PublicEvolving
+    @Override
+    public PartitionWindowedStream<T> fullWindowPartition() {
+        throw new UnsupportedOperationException(
+                "KeyedStream doesn't support full window on partitions, if you want operations over each-key, use methods in KeyedStream directly.");
+    }
+
     /**
      * Publishes the keyed stream as queryable ValueState instance.
      *
