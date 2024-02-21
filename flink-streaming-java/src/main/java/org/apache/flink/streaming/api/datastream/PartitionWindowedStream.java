@@ -20,10 +20,12 @@ package org.apache.flink.streaming.api.datastream;
 
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.functions.MapPartitionFunction;
+import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.operators.MapPartitionOperator;
+import org.apache.flink.streaming.api.operators.PartitionReduceOperator;
 import org.apache.flink.streaming.runtime.partitioner.ForwardPartitioner;
 
 /**
@@ -57,6 +59,20 @@ public class PartitionWindowedStream<T> {
                         mapPartitionFunction, input.getType(), opName, true);
         return input.setConnectionType(new ForwardPartitioner<>())
                 .transform(opName, resultType, new MapPartitionOperator<>(mapPartitionFunction))
+                .setParallelism(input.getParallelism());
+    }
+
+    public SingleOutputStreamOperator<T> reduce(ReduceFunction<T> reduceFunction) {
+        if (reduceFunction == null) {
+            throw new IllegalArgumentException("The reduce function must not be null.");
+        }
+        reduceFunction = environment.clean(reduceFunction);
+        String opName = "PartitionReduce";
+        return input.setConnectionType(new ForwardPartitioner<>())
+                .transform(
+                        opName,
+                        input.getTransformation().getOutputType(),
+                        new PartitionReduceOperator<>(reduceFunction))
                 .setParallelism(input.getParallelism());
     }
 }
