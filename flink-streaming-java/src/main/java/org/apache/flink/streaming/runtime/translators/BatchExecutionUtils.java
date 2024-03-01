@@ -57,7 +57,7 @@ public class BatchExecutionUtils {
                 !isInputSelectable || !sortInputs,
                 "Batch state backend and sorting inputs are not supported in graphs with an InputSelectable operator.");
 
-        if (sortInputs) {
+        if (sortInputs && existSortInputRequirement(inputRequirements)) {
             LOG.debug("Applying sorting/pass-through input requirements for operator {}.", node);
             for (int i = 0; i < inputRequirements.length; i++) {
                 node.addInputRequirement(i, inputRequirements[i]);
@@ -69,6 +69,16 @@ public class BatchExecutionUtils {
             node.setManagedMemoryUseCaseWeights(
                     operatorScopeUseCaseWeights, Collections.emptySet());
         }
+    }
+
+    private static boolean existSortInputRequirement(
+            StreamConfig.InputRequirement... inputRequirements) {
+        for (StreamConfig.InputRequirement requirement : inputRequirements) {
+            if (requirement == StreamConfig.InputRequirement.SORTED) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int deriveMemoryWeight(ReadableConfig configuration) {

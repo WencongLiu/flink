@@ -23,6 +23,7 @@ import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.InvalidProgramException;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
+import org.apache.flink.api.common.operators.Order;
 import org.apache.flink.api.common.state.ReducingStateDescriptor;
 import org.apache.flink.api.common.state.ValueStateDescriptor;
 import org.apache.flink.api.common.typeinfo.BasicArrayTypeInfo;
@@ -30,11 +31,13 @@ import org.apache.flink.api.common.typeinfo.PrimitiveArrayTypeInfo;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.Utils;
 import org.apache.flink.api.java.functions.KeySelector;
+import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.typeutils.EnumTypeInfo;
 import org.apache.flink.api.java.typeutils.ObjectArrayTypeInfo;
 import org.apache.flink.api.java.typeutils.PojoTypeInfo;
 import org.apache.flink.api.java.typeutils.TupleTypeInfoBase;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
+import org.apache.flink.core.memory.ManagedMemoryUseCase;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.streaming.api.functions.ProcessFunction;
@@ -50,6 +53,7 @@ import org.apache.flink.streaming.api.operators.KeyedProcessOperator;
 import org.apache.flink.streaming.api.operators.LegacyKeyedProcessOperator;
 import org.apache.flink.streaming.api.operators.StreamOperatorFactory;
 import org.apache.flink.streaming.api.operators.co.IntervalJoinOperator;
+import org.apache.flink.streaming.api.operators.sortpartition.KeyedSortPartitionOperator;
 import org.apache.flink.streaming.api.transformations.OneInputTransformation;
 import org.apache.flink.streaming.api.transformations.PartitionTransformation;
 import org.apache.flink.streaming.api.transformations.ReduceTransformation;
@@ -79,6 +83,7 @@ import java.util.List;
 import java.util.Stack;
 import java.util.UUID;
 
+import static org.apache.flink.streaming.api.operators.sortpartition.KeyedSortPartitionOperator.DEFAULT_MANAGE_MEMORY_WEIGHT;
 import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /**
@@ -1076,6 +1081,102 @@ public class KeyedStream<T, KEY> extends DataStream<T> {
     public PartitionWindowedStream<T> fullWindowPartition() {
         throw new UnsupportedOperationException(
                 "KeyedStream doesn't support full window on partitions, if you want operations over each-key, use methods in KeyedStream directly.");
+    }
+
+    /**
+     * Sorts all records of each partition on the specified field in the specified order. Each
+     * partition have the same key on this {@link KeyedStream}. The type of records must be {@link
+     * Tuple}.
+     *
+     * @param field The field index on which records is sorted.
+     * @param order The order in which records is sorted.
+     * @return The resulting data stream with sorted records in each partition.
+     */
+    public SingleOutputStreamOperator<T> sortPartition(int field, Order order) {
+        if (order == null) {
+            throw new IllegalArgumentException("The order must not be null.");
+        }
+        if (field < 0) {
+            throw new IllegalArgumentException("The field mustn't be less than zero.");
+        }
+        TypeInformation<T> inputType = getType();
+        KeyedSortPartitionOperator<T, KEY> operator =
+                new KeyedSortPartitionOperator<>(inputType, field, order);
+        final String opName = "KeyedSortPartition";
+        SingleOutputStreamOperator<T> result =
+                this.transform(opName, inputType, operator).setParallelism(this.getParallelism());
+        result.getTransformation()
+                .declareManagedMemoryUseCaseAtOperatorScope(
+                        ManagedMemoryUseCase.OPERATOR, DEFAULT_MANAGE_MEMORY_WEIGHT);
+        return result;
+    }
+
+    /**
+     * Sorts all records of each partition on the specified field in the specified order. Each
+     * partition have the same key on this {@link KeyedStream}. The type of records must be Flink
+     * POJO {@link PojoTypeInfo}. A type is considered a Flink POJO type, if it fulfills the
+     * conditions below.
+     *
+     * <ul>
+     *   <li>It is a public class, and standalone (not a non-static inner class).
+     *   <li>It has a public no-argument constructor.
+     *   <li>All non-static, non-transient fields in the class (and all superclasses) are either
+     *       public (and non-final) or have a public getter and a setter method that follows the
+     *       Java beans naming conventions for getters and setters.
+     *   <li>It is a fixed-length, null-aware composite type with non-deterministic field order.
+     *       Every field can be null independent of the field's type.
+     * </ul>
+     *
+     * @param field The field expression referring to the field on which records is sorted.
+     * @param order The order in which records is sorted.
+     * @return The resulting data stream with sorted records in each partition.
+     */
+    public SingleOutputStreamOperator<T> sortPartition(String field, Order order) {
+        if (field == null) {
+            throw new IllegalArgumentException("The field must not be null.");
+        }
+        if (order == null) {
+            throw new IllegalArgumentException("The order must not be null.");
+        }
+        TypeInformation<T> inputType = getType();
+        KeyedSortPartitionOperator<T, KEY> operator =
+                new KeyedSortPartitionOperator<>(inputType, field, order);
+        final String opName = "KeyedSortPartition";
+        SingleOutputStreamOperator<T> result =
+                this.transform(opName, inputType, operator).setParallelism(this.getParallelism());
+        result.getTransformation()
+                .declareManagedMemoryUseCaseAtOperatorScope(
+                        ManagedMemoryUseCase.OPERATOR, DEFAULT_MANAGE_MEMORY_WEIGHT);
+        return result;
+    }
+
+    /**
+     * Sorts all records of each partition on the extracted key in the specified order. Each
+     * partition have the same key on this {@link KeyedStream}.
+     *
+     * @param <K> The type of the key to extract from the records for sorting.
+     * @param keySelector The KeySelector function which extracts the key values from records.
+     * @param order The order in which records is sorted.
+     * @return The resulting data stream with sorted records in each partition.
+     */
+    public <K> SingleOutputStreamOperator<T> sortPartition(
+            KeySelector<T, K> keySelector, Order order) {
+        if (keySelector == null) {
+            throw new IllegalArgumentException("The key selector must not be null.");
+        }
+        if (order == null) {
+            throw new IllegalArgumentException("The order must not be null.");
+        }
+        TypeInformation<T> inputType = getType();
+        KeyedSortPartitionOperator<T, KEY> operator =
+                new KeyedSortPartitionOperator<>(inputType, environment.clean(keySelector), order);
+        final String opName = "KeyedSortPartition";
+        SingleOutputStreamOperator<T> result =
+                this.transform(opName, inputType, operator).setParallelism(this.getParallelism());
+        result.getTransformation()
+                .declareManagedMemoryUseCaseAtOperatorScope(
+                        ManagedMemoryUseCase.OPERATOR, DEFAULT_MANAGE_MEMORY_WEIGHT);
+        return result;
     }
 
     /**
